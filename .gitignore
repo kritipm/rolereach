@@ -1,0 +1,7 @@
+rolereach.db
+.env
+key.env
+__pycache__
+*.pyc
+venv/
+.venv/
