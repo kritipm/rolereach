@@ -85,6 +85,11 @@ MAX_COMMENTS_TO_SCAN = 500
 
 DB_PATH = os.path.join(BASE_DIR, "rolereach.db")
 
+# Shared secret used to authenticate the scheduler's post-run DB sync to the
+# deployed dashboard (see /api/sync-db in dashboard.py and sync step in scheduler.py).
+RAILWAY_TOKEN = os.environ.get("RAILWAY_TOKEN")
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://rolereach-production.up.railway.app")
+
 # Cutshort.io public job search (no login required)
 # Note: Cutshort's `page` query param does not actually paginate this feed —
 # it returns the same ranked pool of jobs regardless of page number — so we scan once.

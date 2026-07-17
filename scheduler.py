@@ -4,7 +4,10 @@ import sys
 import time
 from datetime import datetime
 
+import requests
 import schedule
+
+import config
 
 PIPELINE_STEPS = [
     "main.py",              # Hacker News
@@ -29,12 +32,40 @@ def run_step(script_name):
         print(f"[{script_name}] exited with code {result.returncode} — continuing to next step.")
 
 
+def sync_db_to_railway():
+    print(f"\n{'=' * 60}")
+    print("STEP: sync rolereach.db to Railway dashboard")
+    print(f"{'=' * 60}")
+
+    if not config.RAILWAY_TOKEN:
+        print("RAILWAY_TOKEN not set in .env — skipping sync.")
+        return
+
+    url = f"{config.DASHBOARD_URL}/api/sync-db"
+    try:
+        with open(config.DB_PATH, "rb") as db_file:
+            response = requests.post(
+                url,
+                headers={"Authorization": f"Bearer {config.RAILWAY_TOKEN}"},
+                files={"db": ("rolereach.db", db_file, "application/octet-stream")},
+                timeout=60,
+            )
+        if response.ok:
+            print(f"Synced rolereach.db to {config.DASHBOARD_URL} — {response.json()}")
+        else:
+            print(f"Sync failed ({response.status_code}): {response.text} — continuing.")
+    except requests.RequestException as exc:
+        print(f"Sync request to {url} failed: {exc} — continuing.")
+
+
 def run_pipeline():
     started_at = datetime.now()
     print(f"\n### RoleReach pipeline run started at {started_at.isoformat(timespec='seconds')} ###")
 
     for script_name in PIPELINE_STEPS:
         run_step(script_name)
+
+    sync_db_to_railway()
 
     finished_at = datetime.now()
     print(f"\n### RoleReach pipeline run finished at {finished_at.isoformat(timespec='seconds')} "

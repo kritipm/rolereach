@@ -222,6 +222,29 @@ def api_pipeline():
     )
 
 
+# ---------- API: DB sync (called by scheduler.py after each pipeline run) ----------
+
+
+@app.route("/api/sync-db", methods=["POST"])
+def api_sync_db():
+    if not config.RAILWAY_TOKEN:
+        return jsonify({"error": "RAILWAY_TOKEN is not configured on the server"}), 503
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header != f"Bearer {config.RAILWAY_TOKEN}":
+        return jsonify({"error": "unauthorized"}), 401
+
+    uploaded = request.files.get("db")
+    if uploaded is None:
+        return jsonify({"error": "missing 'db' file in upload"}), 400
+
+    tmp_path = config.DB_PATH + ".uploading"
+    uploaded.save(tmp_path)
+    os.replace(tmp_path, config.DB_PATH)
+
+    return jsonify({"status": "ok", "bytes": os.path.getsize(config.DB_PATH)})
+
+
 DASHBOARD_HTML = r"""
 <!doctype html>
 <html lang="en">
