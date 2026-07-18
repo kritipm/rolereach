@@ -9,7 +9,7 @@ import database
 
 load_dotenv()
 
-PORTFOLIO_URL = os.environ["PORTFOLIO_URL"]
+PORTFOLIO_URL = os.environ.get("PORTFOLIO_URL", "")
 
 EMAIL_TEMPLATE = """Subject: Built and Shipped. Applying for APM.
 
