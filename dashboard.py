@@ -551,6 +551,12 @@ DASHBOARD_HTML = r"""
 const FILTERS = ["All", "Sent", "Replied", "Interview", "Skip"];
 let currentFilter = "All";
 
+const FILTER_EMPTY_MESSAGES = {
+  "Sent": "No emails sent yet. Mark jobs as Sent to track here.",
+  "Replied": "No replies yet. Keep sending.",
+  "Interview": "No interviews yet. They're coming.",
+};
+
 const STATUS_ICON = { "NEW": "&#9679;", "Sent": "&#10003;", "Replied": "&#8617;", "Interview": "&#9733;", "Skip": "&#10005;" };
 const STATUS_NEXT = { "NEW": "Sent", "Sent": "Replied", "Replied": "Interview", "Interview": "Skip", "Skip": "NEW" };
 
@@ -671,8 +677,17 @@ function jobRowHtml(job) {
   </div>`;
 }
 
-function sectionHtml(key, title, meta, jobs, cls) {
-  if (jobs.length === 0) return "";
+function sectionHtml(key, title, meta, jobs, cls, emptyMessage) {
+  if (jobs.length === 0) {
+    if (!emptyMessage) return "";
+    return `<div class="section-block">
+      <div class="section-label ${cls}">
+        <span class="section-title">${title}</span>
+        <span class="section-meta">${meta}</span>
+      </div>
+      <div class="empty-note">${emptyMessage}</div>
+    </div>`;
+  }
   return `<div class="section-block">
     <div class="section-label ${cls}">
       <span class="section-title">${title}</span>
@@ -707,7 +722,8 @@ async function loadJobs() {
     <div class="summary-card interview"><div class="label">Interview</div><div class="value">${interview}</div></div>`;
 
   if (jobs.length === 0) {
-    container.innerHTML = '<div class="empty-note">No jobs match this filter.</div>';
+    const msg = FILTER_EMPTY_MESSAGES[currentFilter] || "No jobs match this filter.";
+    container.innerHTML = `<div class="empty-note">${msg}</div>`;
     return;
   }
 
@@ -718,7 +734,7 @@ async function loadJobs() {
   container.innerHTML =
     sectionHtml("act_now", "Act now", "Has a named email &mdash; send today", actNow, "act-now") +
     sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
-    sectionHtml("no_contact", "No contact", "Nothing found yet &mdash; low priority", noContact, "");
+    sectionHtml("no_contact", "No contact", "Nothing found yet &mdash; low priority", noContact, "", "No jobs without contact &mdash; great coverage.");
 }
 
 async function cycleStatus(jobId, currentStatus) {
@@ -771,6 +787,14 @@ function ringSvg(pct, glow) {
 async function loadPipeline() {
   const res = await fetch("/api/pipeline");
   const d = await res.json();
+
+  if (d.emailed === 0) {
+    document.getElementById("pipeline-rings").innerHTML = "";
+    document.getElementById("pipeline-goal").innerHTML =
+      '<div class="empty-note">Start marking jobs as Sent in Actions to see your funnel fill up.</div>';
+    document.getElementById("perf-tbody").innerHTML = "";
+    return;
+  }
 
   const rings = [
     {label: "Seen", value: d.seen, max: d.seen, desc: "Total roles surfaced", glow: true},
