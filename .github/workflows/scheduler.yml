@@ -1,0 +1,37 @@
+name: RoleReach daily pipeline
+
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SNOV_CLIENT_ID: ${{ secrets.SNOV_CLIENT_ID }}
+          SNOV_CLIENT_SECRET: ${{ secrets.SNOV_CLIENT_SECRET }}
+          SNOV_CLIENT_ID_2: ${{ secrets.SNOV_CLIENT_ID_2 }}
+          SNOV_CLIENT_SECRET_2: ${{ secrets.SNOV_CLIENT_SECRET_2 }}
+          SNOV_CLIENT_ID_3: ${{ secrets.SNOV_CLIENT_ID_3 }}
+          SNOV_CLIENT_SECRET_3: ${{ secrets.SNOV_CLIENT_SECRET_3 }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scheduler.py --now
