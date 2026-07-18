@@ -1,5 +1,4 @@
 import re
-import sqlite3
 import urllib.parse
 
 import requests
@@ -68,7 +67,6 @@ def extract_real_employer(text, current_name):
 
 def fix_names():
     with database.get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT comment_id, source, author, text, url FROM jobs").fetchall()
 
         changes = []

@@ -37,6 +37,10 @@ def sync_db_to_railway():
     print("STEP: sync rolereach.db to Railway dashboard")
     print(f"{'=' * 60}")
 
+    if config.DATABASE_URL:
+        print("DATABASE_URL is set — pipeline writes directly to Postgres, skipping legacy sqlite sync.")
+        return
+
     if not config.RAILWAY_TOKEN:
         print("RAILWAY_TOKEN not set in .env — skipping sync.")
         return

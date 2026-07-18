@@ -1,5 +1,4 @@
 import os
-import sqlite3
 from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
@@ -28,7 +27,6 @@ WEEKLY_GOAL_TARGET = 10
 def get_all_jobs_with_meta():
     database.init_db()
     with database.get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         jobs = [dict(r) for r in conn.execute("SELECT * FROM jobs").fetchall()]
 
     actions = database.fetch_all_job_actions()
@@ -56,8 +54,9 @@ def get_all_jobs_with_meta():
 
 
 def last_run_timestamp():
-    import os
-
+    if config.DATABASE_URL:
+        # No local file mtime to key off of when reading from Postgres.
+        return None
     if not os.path.exists(config.DB_PATH):
         return None
     return datetime.fromtimestamp(os.path.getmtime(config.DB_PATH)).isoformat(timespec="seconds")
@@ -227,6 +226,10 @@ def api_pipeline():
 
 @app.route("/api/sync-db", methods=["POST"])
 def api_sync_db():
+    if config.DATABASE_URL:
+        # Dashboard reads directly from Postgres now; no sqlite file to sync.
+        return jsonify({"status": "skipped", "reason": "DATABASE_URL is set"})
+
     if not config.RAILWAY_TOKEN:
         return jsonify({"error": "RAILWAY_TOKEN is not configured on the server"}), 503
 

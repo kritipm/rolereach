@@ -3,111 +3,201 @@ from contextlib import contextmanager
 
 import config
 
+if config.DATABASE_URL:
+    import psycopg2
+    import psycopg2.extras
 
-def init_db():
-    with get_connection() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS jobs (
-                comment_id INTEGER PRIMARY KEY,
-                thread_id INTEGER NOT NULL,
-                author TEXT,
-                posted_at TEXT,
-                matched_keyword TEXT,
-                text TEXT NOT NULL,
-                url TEXT,
-                company_url TEXT,
-                verified INTEGER NOT NULL DEFAULT 0,
-                source TEXT NOT NULL DEFAULT 'hackernews',
-                external_id TEXT,
-                hm_name TEXT,
-                hm_email TEXT,
-                smtp_guesses TEXT,
-                company_linkedin TEXT,
-                email_draft TEXT,
-                notified INTEGER NOT NULL DEFAULT 0,
-                experience_range TEXT,
-                description TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_actions (
-                job_id INTEGER PRIMARY KEY,
-                status TEXT NOT NULL,
-                actioned_at TEXT NOT NULL
-            )
-            """
-        )
-        existing_columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
-        }
-        if "company_url" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN company_url TEXT")
-        if "verified" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN verified INTEGER NOT NULL DEFAULT 0")
-        if "source" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN source TEXT NOT NULL DEFAULT 'hackernews'")
-        if "external_id" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN external_id TEXT")
-        if "hm_name" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN hm_name TEXT")
-        if "hm_email" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN hm_email TEXT")
-        if "smtp_guesses" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN smtp_guesses TEXT")
-        if "company_linkedin" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN company_linkedin TEXT")
-        if "email_draft" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN email_draft TEXT")
-        if "notified" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN notified INTEGER NOT NULL DEFAULT 0")
-        if "experience_range" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN experience_range TEXT")
-        if "description" not in existing_columns:
-            conn.execute("ALTER TABLE jobs ADD COLUMN description TEXT")
-        conn.commit()
+
+class Connection:
+    """Wraps a sqlite3 or psycopg2 connection behind one interface so callers
+    can do `conn.execute(query_with_question_marks, params).fetchall()` and get
+    dict-like rows back regardless of backend."""
+
+    def __init__(self, raw, is_postgres):
+        self._raw = raw
+        self.is_postgres = is_postgres
+        if not is_postgres:
+            raw.row_factory = sqlite3.Row
+
+    def execute(self, query, params=()):
+        if self.is_postgres:
+            cur = self._raw.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(query.replace("?", "%s"), params)
+        else:
+            cur = self._raw.cursor()
+            cur.execute(query, params)
+        return cur
+
+    def commit(self):
+        self._raw.commit()
+
+    def close(self):
+        self._raw.close()
 
 
 @contextmanager
 def get_connection():
-    conn = sqlite3.connect(config.DB_PATH)
+    if config.DATABASE_URL:
+        raw = psycopg2.connect(config.DATABASE_URL)
+        conn = Connection(raw, is_postgres=True)
+    else:
+        raw = sqlite3.connect(config.DB_PATH)
+        conn = Connection(raw, is_postgres=False)
     try:
         yield conn
     finally:
         conn.close()
 
 
-def save_job(conn, job):
+def init_db():
+    with get_connection() as conn:
+        if conn.is_postgres:
+            _init_postgres(conn)
+        else:
+            _init_sqlite(conn)
+        conn.commit()
+
+
+def _init_postgres(conn):
     conn.execute(
         """
-        INSERT OR IGNORE INTO jobs
-            (comment_id, thread_id, author, posted_at, matched_keyword, text, url,
-             company_url, verified, source, external_id, experience_range, description)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            job["comment_id"],
-            job["thread_id"],
-            job["author"],
-            job["posted_at"],
-            job["matched_keyword"],
-            job["text"],
-            job["url"],
-            job["company_url"],
-            int(job["verified"]),
-            job.get("source", "hackernews"),
-            job.get("external_id"),
-            job.get("experience_range", "Not specified"),
-            job.get("description"),
-        ),
+        CREATE TABLE IF NOT EXISTS jobs (
+            comment_id       BIGINT PRIMARY KEY,
+            thread_id        BIGINT NOT NULL,
+            author           TEXT,
+            posted_at        TEXT,
+            matched_keyword  TEXT,
+            text             TEXT NOT NULL,
+            url              TEXT,
+            company_url      TEXT,
+            verified         INTEGER NOT NULL DEFAULT 0,
+            source           TEXT NOT NULL DEFAULT 'hackernews',
+            external_id      TEXT,
+            hm_name          TEXT,
+            hm_email         TEXT,
+            smtp_guesses     TEXT,
+            company_linkedin TEXT,
+            email_draft      TEXT,
+            notified         INTEGER NOT NULL DEFAULT 0,
+            experience_range TEXT,
+            description      TEXT
+        )
+        """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_actions (
+            job_id      BIGINT PRIMARY KEY,
+            status      TEXT NOT NULL,
+            actioned_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _init_sqlite(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS jobs (
+            comment_id INTEGER PRIMARY KEY,
+            thread_id INTEGER NOT NULL,
+            author TEXT,
+            posted_at TEXT,
+            matched_keyword TEXT,
+            text TEXT NOT NULL,
+            url TEXT,
+            company_url TEXT,
+            verified INTEGER NOT NULL DEFAULT 0,
+            source TEXT NOT NULL DEFAULT 'hackernews',
+            external_id TEXT,
+            hm_name TEXT,
+            hm_email TEXT,
+            smtp_guesses TEXT,
+            company_linkedin TEXT,
+            email_draft TEXT,
+            notified INTEGER NOT NULL DEFAULT 0,
+            experience_range TEXT,
+            description TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_actions (
+            job_id INTEGER PRIMARY KEY,
+            status TEXT NOT NULL,
+            actioned_at TEXT NOT NULL
+        )
+        """
+    )
+    existing_columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()
+    }
+    if "company_url" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN company_url TEXT")
+    if "verified" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN verified INTEGER NOT NULL DEFAULT 0")
+    if "source" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN source TEXT NOT NULL DEFAULT 'hackernews'")
+    if "external_id" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN external_id TEXT")
+    if "hm_name" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN hm_name TEXT")
+    if "hm_email" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN hm_email TEXT")
+    if "smtp_guesses" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN smtp_guesses TEXT")
+    if "company_linkedin" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN company_linkedin TEXT")
+    if "email_draft" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN email_draft TEXT")
+    if "notified" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN notified INTEGER NOT NULL DEFAULT 0")
+    if "experience_range" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN experience_range TEXT")
+    if "description" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN description TEXT")
+
+
+def save_job(conn, job):
+    values = (
+        job["comment_id"],
+        job["thread_id"],
+        job["author"],
+        job["posted_at"],
+        job["matched_keyword"],
+        job["text"],
+        job["url"],
+        job["company_url"],
+        int(job["verified"]),
+        job.get("source", "hackernews"),
+        job.get("external_id"),
+        job.get("experience_range", "Not specified"),
+        job.get("description"),
+    )
+    columns = """(comment_id, thread_id, author, posted_at, matched_keyword, text, url,
+             company_url, verified, source, external_id, experience_range, description)"""
+    if conn.is_postgres:
+        conn.execute(
+            f"""
+            INSERT INTO jobs {columns}
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (comment_id) DO NOTHING
+            """,
+            values,
+        )
+    else:
+        conn.execute(
+            f"""
+            INSERT OR IGNORE INTO jobs {columns}
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            values,
+        )
 
 
 def fetch_all_jobs():
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM jobs ORDER BY posted_at DESC"
         ).fetchall()
@@ -116,7 +206,6 @@ def fetch_all_jobs():
 
 def fetch_jobs_needing_enrichment(limit=None):
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         query = """
             SELECT * FROM jobs
             WHERE company_url IS NOT NULL AND TRIM(company_url) != ''
@@ -156,7 +245,6 @@ def update_company_linkedin(comment_id, company_linkedin):
 
 def fetch_jobs_with_company_url():
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         query = """
             SELECT * FROM jobs
             WHERE company_url IS NOT NULL AND TRIM(company_url) != ''
@@ -166,7 +254,6 @@ def fetch_jobs_with_company_url():
 
 def fetch_jobs_needing_draft():
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         query = """
             SELECT * FROM jobs
             WHERE hm_email IS NOT NULL AND TRIM(hm_email) != ''
@@ -186,7 +273,6 @@ def update_email_draft(comment_id, email_draft):
 
 def fetch_unnotified_jobs(source=None):
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         if source:
             rows = conn.execute(
                 "SELECT * FROM jobs WHERE notified = 0 AND source = ?", (source,)
@@ -217,6 +303,5 @@ def set_job_action(job_id, status, actioned_at):
 
 def fetch_all_job_actions():
     with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT * FROM user_actions").fetchall()
         return {row["job_id"]: dict(row) for row in rows}

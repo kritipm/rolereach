@@ -85,6 +85,10 @@ MAX_COMMENTS_TO_SCAN = 500
 
 DB_PATH = os.path.join(BASE_DIR, "rolereach.db")
 
+# When set (Railway/Supabase), database.py uses PostgreSQL instead of the
+# local rolereach.db SQLite file.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 # Shared secret used to authenticate the scheduler's post-run DB sync to the
 # deployed dashboard (see /api/sync-db in dashboard.py and sync step in scheduler.py).
 RAILWAY_TOKEN = os.environ.get("RAILWAY_TOKEN")
