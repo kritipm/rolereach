@@ -1,6 +1,6 @@
 import html
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import requests
 
@@ -128,6 +128,10 @@ def scrape_pm_jobs():
 
             min_years = experience_filter.parse_min_experience(text)
             if not experience_filter.is_experience_allowed(min_years, text):
+                continue
+
+            comment_time = datetime.fromtimestamp(comment.get("time", 0), tz=timezone.utc)
+            if (datetime.now(timezone.utc) - comment_time) > timedelta(hours=48):
                 continue
 
             posted_at = datetime.fromtimestamp(

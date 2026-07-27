@@ -1,6 +1,7 @@
 import html
 import json
 import re
+from datetime import datetime, timezone, timedelta
 
 import requests
 
@@ -104,6 +105,17 @@ def format_experience_range(exp_range):
     return f"{min_years}-{max_years} years"
 
 
+def is_recently_posted_iso(iso_str, hours=48):
+    """True if iso_str is within the last `hours` hours. Unknown date = include."""
+    if not iso_str:
+        return True
+    try:
+        posted = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - posted) <= timedelta(hours=hours)
+    except (ValueError, AttributeError):
+        return True
+
+
 def build_job(job, page, description):
     headline = html.unescape(job.get("headline") or "")
     company = job.get("companyDetails") or {}
@@ -143,6 +155,10 @@ def scrape_cutshort_pm_jobs():
             for job in jobs:
                 headline = job.get("headline") or ""
                 if not matches_role(headline):
+                    continue
+
+                created_at = job.get("createdAt") or job.get("updatedAt") or ""
+                if not is_recently_posted_iso(created_at):
                     continue
                 if not is_india_or_remote(job):
                     continue

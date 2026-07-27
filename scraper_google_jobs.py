@@ -1,4 +1,5 @@
 import hashlib
+import re
 import sys
 import urllib.parse
 
@@ -38,6 +39,21 @@ def is_location_allowed(location):
 def is_excluded_company(company_name):
     lowered = (company_name or "").lower()
     return any(keyword in lowered for keyword in config.GOOGLE_JOBS_COMPANY_EXCLUDE_KEYWORDS)
+
+
+def is_recently_posted(posted_at_str):
+    """True if posted within the last 48 hours. Unknown date = include."""
+    if not posted_at_str:
+        return True
+    lowered = posted_at_str.lower().strip()
+    if any(x in lowered for x in ("hour", "today", "just now", "minute")):
+        return True
+    match = re.search(r'(\d+)\s+day', lowered)
+    if match:
+        return int(match.group(1)) <= 2
+    if any(x in lowered for x in ("week", "month", "30+")):
+        return False
+    return True
 
 
 def job_id_to_int(job_id):
@@ -134,6 +150,10 @@ def scrape_google_jobs_pm_jobs():
                 experience_text = " ".join(job.get("extensions") or []) + " " + (job.get("description") or "")
                 min_years = experience_filter.parse_min_experience(experience_text)
                 if not experience_filter.is_experience_allowed(min_years, f"{title} {experience_text}"):
+                    continue
+
+                posted_at_str = (job.get("detected_extensions") or {}).get("posted_at", "")
+                if not is_recently_posted(posted_at_str):
                     continue
 
                 record = build_job(job, query, experience_text)

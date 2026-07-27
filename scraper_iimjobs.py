@@ -102,6 +102,12 @@ def build_job(card, page):
 def scrape_iimjobs_pm_jobs():
     matches = []
     with database.get_connection() as conn:
+        known_ids = {
+            row["comment_id"]
+            for row in conn.execute(
+                "SELECT comment_id FROM jobs WHERE source = 'iimjobs'"
+            ).fetchall()
+        }
         for page in range(1, config.IIMJOBS_PAGES_TO_SCAN + 1):
             try:
                 html = fetch_page_html(page)
@@ -127,6 +133,9 @@ def scrape_iimjobs_pm_jobs():
 
                 record = build_job(card, page)
                 if record["comment_id"] is None:
+                    continue
+
+                if record["comment_id"] in known_ids:
                     continue
 
                 database.save_job(conn, record)
@@ -157,6 +166,9 @@ def scrape_iimjobs_pm_jobs():
 
             record = build_job(card, 0)
             if record["comment_id"] is None:
+                continue
+
+            if record["comment_id"] in known_ids:
                 continue
 
             database.save_job(conn, record)

@@ -89,6 +89,12 @@ def build_job(card, job_id):
 def scrape_internshala_pm_jobs():
     matches = []
     with database.get_connection() as conn:
+        known_ids = {
+            row["comment_id"]
+            for row in conn.execute(
+                "SELECT comment_id FROM jobs WHERE source = 'internshala'"
+            ).fetchall()
+        }
         for url in config.INTERNSHALA_URLS:
             try:
                 html = fetch_listing_html(url)
@@ -114,6 +120,9 @@ def scrape_internshala_pm_jobs():
 
                 job_id = extract_job_id(card["relative_url"])
                 if job_id is None:
+                    continue
+
+                if job_id in known_ids:
                     continue
 
                 record = build_job(card, job_id)
