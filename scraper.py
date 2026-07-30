@@ -131,7 +131,7 @@ def scrape_pm_jobs():
                 continue
 
             comment_time = datetime.fromtimestamp(comment.get("time", 0), tz=timezone.utc)
-            if (datetime.now(timezone.utc) - comment_time) > timedelta(hours=48):
+            if (datetime.now(timezone.utc) - comment_time) > timedelta(hours=168):
                 continue
 
             posted_at = datetime.fromtimestamp(

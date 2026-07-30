@@ -50,7 +50,7 @@ def is_recently_posted(posted_at_str):
         return True
     match = re.search(r'(\d+)\s+day', lowered)
     if match:
-        return int(match.group(1)) <= 2
+        return int(match.group(1)) <= 7
     if any(x in lowered for x in ("week", "month", "30+")):
         return False
     return True
