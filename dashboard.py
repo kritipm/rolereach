@@ -600,9 +600,7 @@ DASHBOARD_HTML = r"""
 const FILTERS = ["All", "Sent", "Replied", "Interview", "Skip"];
 let currentFilter = "All";
 let currentLocation = "All";
-const LOCATIONS = ["All", "Bangalore", "Hyderabad", "Remote"];
 let currentTime = "All";
-const TIME_FILTERS = ["All", "Fresh", "Earlier"];
 let cachedJobs = null;
 let isLoadingJobs = false;
 
