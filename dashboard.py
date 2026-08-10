@@ -532,6 +532,7 @@ DASHBOARD_HTML = r"""
     <div class="summary-strip" id="actions-summary"></div>
     <div class="filter-row" id="filter-row"></div>
     <div class="filter-row" id="location-row"></div>
+    <div class="filter-row" id="time-row"></div>
     <div id="job-sections"><div class="loading-note">Loading jobs…</div></div>
   </section>
 
@@ -554,6 +555,8 @@ const FILTERS = ["All", "Sent", "Replied", "Interview", "Skip"];
 let currentFilter = "All";
 let currentLocation = "All";
 const LOCATIONS = ["All", "Bangalore", "Hyderabad", "Remote"];
+let currentTime = "All";
+const TIME_FILTERS = ["All", "Fresh", "Earlier"];
 
 const FILTER_EMPTY_MESSAGES = {
   "Sent": "No emails sent yet. Mark jobs as Sent to track here.",
@@ -652,7 +655,18 @@ function renderLocationRow() {
   });
 }
 
-function jobRowHtml(job) {
+function renderTimeRow() {
+  let row = document.getElementById("time-row");
+  if (!row) return;
+  row.innerHTML = TIME_FILTERS.map(t =>
+    `<button class="filter-pill ${t === currentTime ? 'active' : ''}" data-time="${t}">${t}</button>`
+  ).join("");
+  row.querySelectorAll("[data-time]").forEach(p => {
+    p.addEventListener("click", () => { currentTime = p.dataset.time; renderTimeRow(); loadJobs(); });
+  });
+}
+
+function jobRowHtml(job, isEarlier = false) {
   const statusKey = job.status.toLowerCase();
   const expBadge = job.tier === 1
     ? '<span class="exp-badge tier1">0-1yr / Fresher</span>'
@@ -660,7 +674,7 @@ function jobRowHtml(job) {
 
   const statusPillClass = statusKey === "new" ? "" : statusKey;
   const pillContent = job.status === "NEW"
-    ? `<span class="pulse-dot"></span>NEW`
+    ? (isEarlier ? "EARLIER" : `<span class="pulse-dot"></span>NEW`)
     : `${STATUS_ICON[job.status]} ${job.status}`;
 
   let contactChip = '<span class="contact-chip none">No contact</span>';
@@ -694,7 +708,7 @@ function jobRowHtml(job) {
   </div>`;
 }
 
-function sectionHtml(key, title, meta, jobs, cls, emptyMessage) {
+function sectionHtml(key, title, meta, jobs, cls, emptyMessage, isEarlier = false) {
   if (jobs.length === 0) {
     if (!emptyMessage) return "";
     return `<div class="section-block">
@@ -711,7 +725,7 @@ function sectionHtml(key, title, meta, jobs, cls, emptyMessage) {
       <span class="section-meta">${meta}</span>
       <span class="section-count-badge ${cls}">${jobs.length}</span>
     </div>
-    ${jobs.map(jobRowHtml).join("")}
+    ${jobs.map(j => jobRowHtml(j, isEarlier)).join("")}
   </div>`;
 }
 
@@ -774,9 +788,12 @@ async function loadJobs() {
   const review = filteredJobs.filter(j => j.group === "review");
   const noContact = filteredJobs.filter(j => j.group === "no_contact");
 
+  const showFresh = currentTime === "All" || currentTime === "Fresh";
+  const showEarlier = currentTime === "All" || currentTime === "Earlier";
+
   container.innerHTML =
-    sectionHtml("act_now", "Today's Roles", "Fresh in the last 7 days", actNow, "act-now") +
-    (actNowOld.length ? sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now") : "") +
+    (showFresh ? sectionHtml("act_now", "Today's Roles", "Fresh in the last 7 days", actNow, "act-now") : "") +
+    (showEarlier && actNowOld.length ? sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now", "", true) : "") +
     sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
     sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "");
 }
@@ -909,6 +926,7 @@ async function loadPipeline() {
 
 renderFilterRow();
 renderLocationRow();
+renderTimeRow();
 loadAgent();
 </script>
 
