@@ -557,6 +557,8 @@ let currentLocation = "All";
 const LOCATIONS = ["All", "Bangalore", "Hyderabad", "Remote"];
 let currentTime = "All";
 const TIME_FILTERS = ["All", "Fresh", "Earlier"];
+let cachedJobs = null;
+let isLoadingJobs = false;
 
 const FILTER_EMPTY_MESSAGES = {
   "Sent": "No emails sent yet. Mark jobs as Sent to track here.",
@@ -730,22 +732,26 @@ function sectionHtml(key, title, meta, jobs, cls, emptyMessage, isEarlier = fals
 }
 
 async function loadJobs() {
+  if (isLoadingJobs) return;
+
   const container = document.getElementById("job-sections");
-  container.innerHTML = '<div class="loading-note">Loading jobs…</div>';
 
-  const [jobsRes, agentRes] = await Promise.all([
-    fetch("/api/jobs?status=" + encodeURIComponent(currentFilter)),
-    fetch("/api/agent"),
-  ]);
-  const jobs = await jobsRes.json();
-  const filteredJobs = currentLocation === "All" ? jobs : jobs.filter(j => {
-    const loc = (j.location || "").toLowerCase();
-    if (currentLocation === "Remote") return loc.includes("remote");
-    return loc.includes(currentLocation.toLowerCase());
-  });
+  if (!cachedJobs) {
+    isLoadingJobs = true;
+    container.innerHTML = '<div class="loading-note">Loading jobs…</div>';
+    try {
+      const res = await fetch("/api/jobs?status=All");
+      cachedJobs = await res.json();
+    } catch(e) {
+      container.innerHTML = '<div class="empty-note">Failed to load jobs. Refresh the page.</div>';
+      isLoadingJobs = false;
+      return;
+    }
+    isLoadingJobs = false;
+  }
 
-  const actRes = await fetch("/api/jobs?status=All");
-  const allJobs = await actRes.json();
+  const allJobs = cachedJobs;
+
   const total = allJobs.length;
   const sent = allJobs.filter(j => ["Sent","Replied","Interview"].includes(j.status)).length;
   const replied = allJobs.filter(j => ["Replied","Interview"].includes(j.status)).length;
@@ -757,7 +763,21 @@ async function loadJobs() {
     <div class="summary-card replied"><div class="label">Replied</div><div class="value">${replied}</div></div>
     <div class="summary-card interview"><div class="label">Interview</div><div class="value">${interview}</div></div>`;
 
-  if (filteredJobs.length === 0) {
+  let jobs = allJobs;
+
+  if (currentFilter !== "All") {
+    jobs = jobs.filter(j => j.status === currentFilter);
+  }
+
+  if (currentLocation !== "All") {
+    jobs = jobs.filter(j => {
+      const loc = (j.location || "").toLowerCase();
+      if (currentLocation === "Remote") return loc.includes("remote");
+      return loc.includes(currentLocation.toLowerCase());
+    });
+  }
+
+  if (jobs.length === 0) {
     const msg = FILTER_EMPTY_MESSAGES[currentFilter] || "No jobs match this filter.";
     container.innerHTML = `<div class="empty-note">${msg}</div>`;
     return;
@@ -766,27 +786,23 @@ async function loadJobs() {
   const isRecent = (j) => {
     if (!j.posted_at) return true;
     const raw = j.posted_at.toLowerCase().trim();
-
-    // Handle relative strings from Google Jobs
     const hoursMatch = raw.match(/(\d+)\s+hour/);
     if (hoursMatch) return true;
     if (raw.includes("today") || raw.includes("just now") || raw.includes("minute")) return true;
     const daysMatch = raw.match(/(\d+)\s+day/);
     if (daysMatch) return parseInt(daysMatch[1]) <= 7;
     if (raw.includes("week") || raw.includes("month") || raw.includes("30+")) return false;
-
-    // Handle ISO timestamps from HN and others
     const parsed = new Date(j.posted_at);
     if (isNaN(parsed)) return true;
     return parsed >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   };
 
-  const actNowFresh = filteredJobs.filter(j => j.group === "act_now" && j.status === "NEW" && isRecent(j));
-  const actNowOld = filteredJobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isRecent(j));
-  const actNowActioned = filteredJobs.filter(j => j.group === "act_now" && j.status !== "NEW");
+  const actNowFresh = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && isRecent(j));
+  const actNowOld = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isRecent(j));
+  const actNowActioned = jobs.filter(j => j.group === "act_now" && j.status !== "NEW");
   const actNow = [...actNowActioned, ...actNowFresh];
-  const review = filteredJobs.filter(j => j.group === "review");
-  const noContact = filteredJobs.filter(j => j.group === "no_contact");
+  const review = jobs.filter(j => j.group === "review");
+  const noContact = jobs.filter(j => j.group === "no_contact");
 
   const showFresh = currentTime === "All" || currentTime === "Fresh";
   const showEarlier = currentTime === "All" || currentTime === "Earlier";
@@ -806,6 +822,7 @@ async function cycleStatus(jobId, currentStatus) {
     body: JSON.stringify({job_id: jobId, status: nextStatus, timestamp: new Date().toISOString()}),
   });
   if (!res.ok) return;
+  cachedJobs = null;
   loadJobs();
 }
 
