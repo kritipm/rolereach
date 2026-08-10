@@ -673,7 +673,8 @@ function jobRowHtml(job) {
   const draftHtml = job.email_draft
     ? `<div class="draft-panel" id="draft-panel-${job.job_id}">
          <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(job.email_draft)}</div>
-         <button class="copy-btn" onclick="event.stopPropagation(); copyDraft(${job.job_id})">Copy draft</button>
+         <button class="copy-btn" data-copy-id="${job.job_id}" onclick="event.stopPropagation(); copyDraft(${job.job_id})">Copy draft</button>
+         <button class="copy-btn" style="margin-left:8px; background:var(--card); color:var(--text-muted);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
        </div>`
     : "";
 
@@ -793,17 +794,30 @@ async function cycleStatus(jobId, currentStatus) {
 function toggleDraft(jobId) {
   const panel = document.getElementById("draft-panel-" + jobId);
   if (!panel) return;
-  panel.classList.toggle("open");
+  panel.classList.add("open");
 }
 
 function copyDraft(jobId) {
-  const text = document.getElementById("draft-" + jobId).innerText;
-  navigator.clipboard.writeText(text).then(() => {
-    const btn = event.target;
+  const el = document.getElementById("draft-" + jobId);
+  const btn = document.querySelector('[data-copy-id="' + jobId + '"]');
+  if (!el || !btn) return;
+  const text = el.innerText;
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = "Copied!";
+      btn.classList.add("copied");
+      setTimeout(() => { btn.textContent = "Copy draft"; btn.classList.remove("copied"); }, 1500);
+    });
+  } else {
+    const range = document.createRange();
+    range.selectNode(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    document.execCommand("copy");
+    window.getSelection().removeAllRanges();
     btn.textContent = "Copied!";
-    btn.classList.add("copied");
-    setTimeout(() => { btn.textContent = "Copy draft"; btn.classList.remove("copied"); }, 1500);
-  });
+    setTimeout(() => { btn.textContent = "Copy draft"; }, 1500);
+  }
 }
 
 // ---------- PIPELINE ----------
