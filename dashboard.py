@@ -750,7 +750,20 @@ async function loadJobs() {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const isRecent = (j) => {
     if (!j.posted_at) return true;
-    return new Date(j.posted_at) >= sevenDaysAgo;
+    const raw = j.posted_at.toLowerCase().trim();
+
+    // Handle relative strings from Google Jobs
+    const hoursMatch = raw.match(/(\d+)\s+hour/);
+    if (hoursMatch) return true;
+    if (raw.includes("today") || raw.includes("just now") || raw.includes("minute")) return true;
+    const daysMatch = raw.match(/(\d+)\s+day/);
+    if (daysMatch) return parseInt(daysMatch[1]) <= 7;
+    if (raw.includes("week") || raw.includes("month") || raw.includes("30+")) return false;
+
+    // Handle ISO timestamps from HN and others
+    const parsed = new Date(j.posted_at);
+    if (isNaN(parsed)) return true;
+    return parsed >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   };
 
   const actNowFresh = filteredJobs.filter(j => j.group === "act_now" && j.status === "NEW" && isRecent(j));
