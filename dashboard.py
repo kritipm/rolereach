@@ -530,6 +530,7 @@ DASHBOARD_HTML = r"""
   <section id="tab-actions" class="tab-content">
     <div class="summary-strip" id="actions-summary"></div>
     <div class="filter-row" id="filter-row"></div>
+    <div class="filter-row" id="location-row"></div>
     <div id="job-sections"><div class="loading-note">Loading jobs…</div></div>
   </section>
 
@@ -550,6 +551,8 @@ DASHBOARD_HTML = r"""
 <script>
 const FILTERS = ["All", "Sent", "Replied", "Interview", "Skip"];
 let currentFilter = "All";
+let currentLocation = "All";
+const LOCATIONS = ["All", "Bangalore", "Hyderabad", "Remote"];
 
 const FILTER_EMPTY_MESSAGES = {
   "Sent": "No emails sent yet. Mark jobs as Sent to track here.",
@@ -637,6 +640,17 @@ function renderFilterRow() {
   });
 }
 
+function renderLocationRow() {
+  let row = document.getElementById("location-row");
+  if (!row) return;
+  row.innerHTML = LOCATIONS.map(l =>
+    `<button class="filter-pill ${l === currentLocation ? 'active' : ''}" data-loc="${l}">${l}</button>`
+  ).join("");
+  row.querySelectorAll("[data-loc]").forEach(p => {
+    p.addEventListener("click", () => { currentLocation = p.dataset.loc; renderLocationRow(); loadJobs(); });
+  });
+}
+
 function jobRowHtml(job) {
   const statusKey = job.status.toLowerCase();
   const expBadge = job.tier === 1
@@ -707,6 +721,11 @@ async function loadJobs() {
     fetch("/api/agent"),
   ]);
   const jobs = await jobsRes.json();
+  const filteredJobs = currentLocation === "All" ? jobs : jobs.filter(j => {
+    const loc = (j.location || "").toLowerCase();
+    if (currentLocation === "Remote") return loc.includes("remote");
+    return loc.includes(currentLocation.toLowerCase());
+  });
 
   const actRes = await fetch("/api/jobs?status=All");
   const allJobs = await actRes.json();
@@ -721,15 +740,15 @@ async function loadJobs() {
     <div class="summary-card replied"><div class="label">Replied</div><div class="value">${replied}</div></div>
     <div class="summary-card interview"><div class="label">Interview</div><div class="value">${interview}</div></div>`;
 
-  if (jobs.length === 0) {
+  if (filteredJobs.length === 0) {
     const msg = FILTER_EMPTY_MESSAGES[currentFilter] || "No jobs match this filter.";
     container.innerHTML = `<div class="empty-note">${msg}</div>`;
     return;
   }
 
-  const actNow = jobs.filter(j => j.group === "act_now");
-  const review = jobs.filter(j => j.group === "review");
-  const noContact = jobs.filter(j => j.group === "no_contact");
+  const actNow = filteredJobs.filter(j => j.group === "act_now");
+  const review = filteredJobs.filter(j => j.group === "review");
+  const noContact = filteredJobs.filter(j => j.group === "no_contact");
 
   container.innerHTML =
     sectionHtml("act_now", "Act now", "Has a named email &mdash; send today", actNow, "act-now") +
@@ -833,6 +852,7 @@ async function loadPipeline() {
 }
 
 renderFilterRow();
+renderLocationRow();
 loadAgent();
 </script>
 
