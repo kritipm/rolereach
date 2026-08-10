@@ -674,6 +674,7 @@ function jobRowHtml(job) {
     ? `<div class="draft-panel" id="draft-panel-${job.job_id}">
          <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(job.email_draft)}</div>
          <button class="copy-btn" data-copy-id="${job.job_id}" onclick="event.stopPropagation(); copyDraft(${job.job_id})">Copy draft</button>
+         <button class="copy-btn" data-email-id="${job.job_id}" style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyFullEmail(${job.job_id}, '${(job.hm_name||'').replace(/'/g,"\\'")}', '${(job.title||'').replace(/'/g,"\\'")}', '${(job.company||'').replace(/'/g,"\\'")}')">Copy Full Email</button>
          <button class="copy-btn" style="margin-left:8px; background:var(--card); color:var(--text-muted);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
        </div>`
     : "";
@@ -817,6 +818,24 @@ function copyDraft(jobId) {
     window.getSelection().removeAllRanges();
     btn.textContent = "Copied!";
     setTimeout(() => { btn.textContent = "Copy draft"; }, 1500);
+  }
+}
+
+function copyFullEmail(jobId, name, role, company) {
+  const template = `Subject: APM Application — Kriti Kumari\n\nHi ${name || "[Name]"},\n\nI noticed [specific observation about their product]. It made me look closer.\n\nI'm applying for the ${role || "[Role]"} at ${company || "[Company]"}. I come from a design background and have been building in product — activation flows, user reachability, documented tradeoffs. Not just thinking. Actually shipping.\n\nPortfolio with PRD specs and GitHub depth: https://kriti-portfolio-pm.vercel.app/\n\nCV attached. Happy to jump on a 15-minute call if this lands.\n\nKriti Kumari`;
+  const btn = document.querySelector('[data-email-id="' + jobId + '"]');
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(template).then(() => {
+      if (btn) { btn.textContent = "Email Copied!"; setTimeout(() => { btn.textContent = "Copy Full Email"; }, 1500); }
+    });
+  } else {
+    const el = document.createElement("textarea");
+    el.value = template;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
+    if (btn) { btn.textContent = "Email Copied!"; setTimeout(() => { btn.textContent = "Copy Full Email"; }, 1500); }
   }
 }
 
