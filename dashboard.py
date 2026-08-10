@@ -747,7 +747,6 @@ async function loadJobs() {
     return;
   }
 
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const isRecent = (j) => {
     if (!j.posted_at) return true;
     const raw = j.posted_at.toLowerCase().trim();
