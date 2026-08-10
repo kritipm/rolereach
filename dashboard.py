@@ -140,6 +140,7 @@ def api_jobs():
                 "url": j.get("url"),
                 "status": j["status"],
                 "group": j["group"],
+                "posted_at": j.get("posted_at"),
             }
             for j in jobs
         ]
@@ -746,14 +747,24 @@ async function loadJobs() {
     return;
   }
 
-  const actNow = filteredJobs.filter(j => j.group === "act_now");
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const isRecent = (j) => {
+    if (!j.posted_at) return true;
+    return new Date(j.posted_at) >= sevenDaysAgo;
+  };
+
+  const actNowFresh = filteredJobs.filter(j => j.group === "act_now" && j.status === "NEW" && isRecent(j));
+  const actNowOld = filteredJobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isRecent(j));
+  const actNowActioned = filteredJobs.filter(j => j.group === "act_now" && j.status !== "NEW");
+  const actNow = [...actNowActioned, ...actNowFresh];
   const review = filteredJobs.filter(j => j.group === "review");
   const noContact = filteredJobs.filter(j => j.group === "no_contact");
 
   container.innerHTML =
-    sectionHtml("act_now", "Act now", "Has a named email &mdash; send today", actNow, "act-now") +
+    sectionHtml("act_now", "Today's Roles", "Fresh in the last 7 days", actNow, "act-now") +
+    (actNowOld.length ? sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now") : "") +
     sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
-    sectionHtml("no_contact", "No contact", "Nothing found yet &mdash; low priority", noContact, "", "No jobs without contact &mdash; great coverage.");
+    sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "");
 }
 
 async function cycleStatus(jobId, currentStatus) {
