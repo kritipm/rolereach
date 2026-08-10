@@ -494,6 +494,37 @@ DASHBOARD_HTML = r"""
   .perf-table td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
   .perf-table td.name { color: var(--text-primary); font-weight: 700; }
   .perf-table td.num { font-family: "SF Mono", Consolas, monospace; color: var(--text-secondary); }
+
+  .dropdown-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .dropdown-wrap select {
+    appearance: none;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 36px 8px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    outline: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23B0B0B0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    transition: border-color 0.15s ease;
+  }
+  .dropdown-wrap select:hover {
+    border-color: var(--pink);
+    color: var(--pink);
+  }
+  .dropdown-wrap select option {
+    background: var(--card);
+    color: var(--text-primary);
+  }
 </style>
 </head>
 <body>
@@ -531,8 +562,23 @@ DASHBOARD_HTML = r"""
   <section id="tab-actions" class="tab-content">
     <div class="summary-strip" id="actions-summary"></div>
     <div class="filter-row" id="filter-row"></div>
-    <div class="filter-row" id="location-row"></div>
-    <div class="filter-row" id="time-row"></div>
+    <div class="dropdown-row">
+      <div class="dropdown-wrap">
+        <select id="location-select" onchange="currentLocation = this.value; loadJobs()">
+          <option value="All">📍 All Cities</option>
+          <option value="Bangalore">Bangalore</option>
+          <option value="Hyderabad">Hyderabad</option>
+          <option value="Remote">Remote</option>
+        </select>
+      </div>
+      <div class="dropdown-wrap">
+        <select id="time-select" onchange="currentTime = this.value; loadJobs()">
+          <option value="All">🕐 All Time</option>
+          <option value="Fresh">Past Week</option>
+          <option value="Earlier">Earlier</option>
+        </select>
+      </div>
+    </div>
     <div id="job-sections"><div class="loading-note">Loading jobs…</div></div>
   </section>
 
@@ -643,28 +689,6 @@ function renderFilterRow() {
   ).join("");
   document.querySelectorAll(".filter-pill").forEach(p => {
     p.addEventListener("click", () => { currentFilter = p.dataset.filter; renderFilterRow(); loadJobs(); });
-  });
-}
-
-function renderLocationRow() {
-  let row = document.getElementById("location-row");
-  if (!row) return;
-  row.innerHTML = LOCATIONS.map(l =>
-    `<button class="filter-pill ${l === currentLocation ? 'active' : ''}" data-loc="${l}">${l}</button>`
-  ).join("");
-  row.querySelectorAll("[data-loc]").forEach(p => {
-    p.addEventListener("click", () => { currentLocation = p.dataset.loc; renderLocationRow(); loadJobs(); });
-  });
-}
-
-function renderTimeRow() {
-  let row = document.getElementById("time-row");
-  if (!row) return;
-  row.innerHTML = TIME_FILTERS.map(t =>
-    `<button class="filter-pill ${t === currentTime ? 'active' : ''}" data-time="${t}">${t}</button>`
-  ).join("");
-  row.querySelectorAll("[data-time]").forEach(p => {
-    p.addEventListener("click", () => { currentTime = p.dataset.time; renderTimeRow(); loadJobs(); });
   });
 }
 
@@ -942,8 +966,6 @@ async function loadPipeline() {
 }
 
 renderFilterRow();
-renderLocationRow();
-renderTimeRow();
 loadAgent();
 </script>
 
