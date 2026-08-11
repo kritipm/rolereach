@@ -30,6 +30,13 @@ PM_KEYWORDS = [
     "apm",
     "junior product manager",
     "junior pm",
+    "founders office",
+    "founding team",
+    "growth associate",
+    "growth pm",
+    "ai pm",
+    "product growth",
+    "chief of staff",
 ]
 
 # Titles containing any of these are excluded even if they mention a PM keyword
@@ -112,6 +119,10 @@ CUTSHORT_ROLE_KEYWORDS = [
     "entry-level",
     "junior product manager",
     "apm",
+    "founders office",
+    "growth associate",
+    "founding team",
+    "chief of staff",
 ]
 
 # Countries mentioned in a Cutshort listing that disqualify it (onsite outside India, not remote)
@@ -168,6 +179,13 @@ GOOGLE_JOBS_QUERIES = [
     "product manager no experience bangalore startup",
     "product analyst fresher bangalore",
     "entry level product manager india remote",
+    "founders office associate bangalore startup",
+    "growth associate product bangalore",
+    "AI product manager fresher india",
+    "chief of staff associate bangalore startup",
+    "growth pm fresher india remote",
+    "founding team product manager bangalore",
+    "product growth associate india",
 ]
 GOOGLE_JOBS_DATE_CHIP = "date_posted:month"
 
@@ -256,4 +274,10 @@ NON_OFFICIAL_WEBSITE_DOMAINS = [
     "opencorporates.com",
     "mca.gov.in",
     "internshala.com",
+    "jooble.org",
+    "jobrapido.com",
+    "glassdoor.co.in",
+    "glassdoor.com",
+    "indeed.com",
+    "monster.com",
 ]

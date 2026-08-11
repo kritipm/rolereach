@@ -708,9 +708,13 @@ function jobRowHtml(job, isEarlier = false) {
 
   let contactChip = '<span class="contact-chip none">No contact</span>';
   if (job.hm_email) {
-    contactChip = `<span class="contact-chip email">&#9993; ${escapeHtml(job.hm_email)}</span>`;
-  } else if (job.company_linkedin) {
-    contactChip = `<span class="contact-chip linkedin">&#8599; LinkedIn</span>`;
+    contactChip = `<a href="${escapeHtml(job.hm_email)}" class="contact-chip email" onclick="event.stopPropagation()">&#9993; ${escapeHtml(job.hm_email)}</a>`;
+  }
+  if (job.company_linkedin) {
+    contactChip += `<a href="${escapeHtml(job.company_linkedin)}" target="_blank" class="contact-chip linkedin" onclick="event.stopPropagation()">&#8599; LinkedIn</a>`;
+  }
+  if (!job.hm_email && !job.company_linkedin) {
+    contactChip = '<span class="contact-chip none">No contact</span>';
   }
 
   const draftHtml = job.email_draft
@@ -792,10 +796,18 @@ async function loadJobs() {
 
   const allJobs = cachedJobs;
 
-  const total = allJobs.length;
-  const sent = allJobs.filter(j => ["Sent","Replied","Interview"].includes(j.status)).length;
-  const replied = allJobs.filter(j => ["Replied","Interview"].includes(j.status)).length;
-  const interview = allJobs.filter(j => j.status === "Interview").length;
+  const seen = new Set();
+  const dedupedJobs = allJobs.filter(j => {
+    const key = (j.title + '|' + j.company).toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const total = dedupedJobs.length;
+  const sent = dedupedJobs.filter(j => ["Sent","Replied","Interview"].includes(j.status)).length;
+  const replied = dedupedJobs.filter(j => ["Replied","Interview"].includes(j.status)).length;
+  const interview = dedupedJobs.filter(j => j.status === "Interview").length;
 
   document.getElementById("actions-summary").innerHTML = `
     <div class="summary-card total"><div class="label">Total</div><div class="value">${total}</div></div>
@@ -803,7 +815,7 @@ async function loadJobs() {
     <div class="summary-card replied"><div class="label">Replied</div><div class="value">${replied}</div></div>
     <div class="summary-card interview"><div class="label">Interview</div><div class="value">${interview}</div></div>`;
 
-  let jobs = allJobs;
+  let jobs = dedupedJobs;
 
   if (currentFilter !== "All") {
     jobs = jobs.filter(j => j.status === currentFilter);
