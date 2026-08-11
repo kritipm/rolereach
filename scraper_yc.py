@@ -31,11 +31,12 @@ def url_to_id(url):
     return int.from_bytes(digest[:8], "big") & 0x7FFFFFFFFFFFFFFF
 
 def fetch_jobs_html():
-    resp = requests.get(
-        JOBS_URL,
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=30,
+    import urllib.parse
+    api_url = (
+        f"{config.SCRAPERAPI_BASE_URL}?api_key={config.SCRAPERAPI_KEY}"
+        f"&url={urllib.parse.quote(JOBS_URL, safe='')}&render=true"
     )
+    resp = requests.get(api_url, timeout=90)
     resp.raise_for_status()
     return resp.text
 
@@ -50,27 +51,51 @@ def is_india_or_remote(location):
 def parse_jobs(html):
     soup = BeautifulSoup(html, "html.parser")
     jobs = []
+    seen_urls = set()
 
-    for card in soup.select("a[href*='/jobs/']"):
+    for card in soup.find_all("a", href=True):
         href = card.get("href", "")
-        if not href.startswith("/jobs/"):
-            continue
 
-        title_el = card.select_one("span.company-name, h2, h3, .role, [class*='title']")
-        title = title_el.get_text(strip=True) if title_el else card.get_text(strip=True)[:80]
-
-        if not title or not matches_role(title):
+        # Only actual job postings — not category pages
+        if not href.startswith("/jobs/") or any(x in href for x in [
+            "/role/", "/san-francisco", "/new-york", "/los-angeles",
+            "/remote", "/london", "/berlin", "/singapore"
+        ]):
             continue
 
         job_url = BASE_URL + href
+        if job_url in seen_urls:
+            continue
+        seen_urls.add(job_url)
+
+        title = card.get_text(strip=True)[:120]
+        if not title or not matches_role(title):
+            continue
+
+        # Try to find company name from parent elements
+        company = ""
+        parent = card.find_parent()
+        if parent:
+            company_el = parent.find_previous_sibling()
+            if company_el:
+                company = company_el.get_text(strip=True)[:60]
+
+        # Location
+        location = "Remote"
+        location_el = card.find_next_sibling()
+        if location_el:
+            loc_text = location_el.get_text(strip=True)
+            if any(kw in loc_text.lower() for kw in ["remote", "india", "anywhere"]):
+                location = loc_text[:60]
 
         jobs.append({
             "title": title,
             "url": job_url,
-            "company": "",
-            "location": "Remote",
+            "company": company,
+            "location": location,
         })
 
+    print(f"[YC] Found {len(jobs)} matching job links after filtering")
     return jobs
 
 def scrape_yc_jobs():
