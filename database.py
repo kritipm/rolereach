@@ -179,18 +179,23 @@ def save_job(conn, job):
              company_url, verified, source, external_id, experience_range, description)"""
 
     if conn.is_postgres:
-        existing = conn.execute(
-            """
-            SELECT comment_id FROM jobs
-            WHERE LOWER(TRIM(matched_keyword)) = LOWER(TRIM(?))
-            AND LOWER(TRIM(author)) = LOWER(TRIM(?))
-            AND source = ?
-            LIMIT 1
-            """,
-            (job["matched_keyword"], job["author"], job.get("source", "hackernews"))
-        ).fetchone()
-        if existing:
-            return
+        # Extract title from text field — format is "Title | Location | via Source"
+        text = job.get("text", "")
+        title = text.split("|")[0].strip().lower() if text else ""
+        author = (job.get("author") or "").strip().lower()
+
+        if title and author:
+            existing = conn.execute(
+                """
+                SELECT comment_id FROM jobs
+                WHERE LOWER(TRIM(SPLIT_PART(text, '|', 1))) = ?
+                AND LOWER(TRIM(author)) = ?
+                LIMIT 1
+                """,
+                (title, author)
+            ).fetchone()
+            if existing:
+                return
 
     if conn.is_postgres:
         conn.execute(
