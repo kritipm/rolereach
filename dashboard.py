@@ -10,13 +10,14 @@ import telegram_bot
 app = Flask(__name__)
 
 STATUS_CYCLE = ["NEW", "Sent", "Replied", "Interview", "Skip"]
-SOURCES = ["hackernews", "cutshort", "iimjobs", "google_jobs", "internshala"]
+SOURCES = ["hackernews", "cutshort", "iimjobs", "google_jobs", "internshala", "yc"]
 SOURCE_LABELS = {
     "hackernews": "Hacker News",
     "cutshort": "Cutshort",
     "iimjobs": "iimjobs",
     "google_jobs": "Google Jobs",
     "internshala": "Internshala",
+    "yc": "YC Jobs",
 }
 WEEKLY_GOAL_TARGET = 10
 

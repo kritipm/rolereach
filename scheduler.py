@@ -15,6 +15,7 @@ PIPELINE_STEPS = [
     "scraper_iimjobs.py",
     "scraper_google_jobs.py",
     "scraper_jsearch.py",
+    "scraper_yc.py",
     "scraper_internshala.py",
     "enricher_snov.py",
     "drafter_claude.py",
