@@ -32,5 +32,6 @@ jobs:
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
           SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scheduler.py --now
