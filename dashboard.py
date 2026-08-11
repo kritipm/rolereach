@@ -574,13 +574,15 @@ DASHBOARD_HTML = r"""
           <option value="Bangalore">Bangalore</option>
           <option value="Hyderabad">Hyderabad</option>
           <option value="Remote">Remote</option>
+          <option value="PanIndia">Pan India</option>
         </select>
       </div>
       <div class="dropdown-wrap">
         <select id="time-select" onchange="currentTime = this.value; loadJobs()">
           <option value="All">🕐 All Time</option>
-          <option value="Fresh">Past Week</option>
-          <option value="Earlier">Earlier</option>
+          <option value="Fresh">New (Today)</option>
+          <option value="Week">Past Week</option>
+          <option value="Earlier">Older</option>
         </select>
       </div>
     </div>
@@ -835,6 +837,7 @@ async function loadJobs() {
     jobs = jobs.filter(j => {
       const loc = (j.location || "").toLowerCase();
       if (currentLocation === "Remote") return loc.includes("remote");
+      if (currentLocation === "PanIndia") return loc.includes("india") || loc.includes("pan india") || loc.includes("anywhere");
       return loc.includes(currentLocation.toLowerCase());
     });
   }
@@ -845,7 +848,7 @@ async function loadJobs() {
     return;
   }
 
-  const isRecent = (j) => {
+  const isThisWeek = (j) => {
     if (!j.posted_at) return true;
     const raw = j.posted_at.toLowerCase().trim();
     const hoursMatch = raw.match(/(\d+)\s+hour/);
@@ -859,18 +862,29 @@ async function loadJobs() {
     return parsed >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   };
 
-  const actNowFresh = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && isRecent(j));
-  const actNowOld = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isRecent(j));
+  const isToday = (j) => {
+    if (!j.posted_at) return false;
+    const raw = j.posted_at.toLowerCase().trim();
+    if (raw.includes("hour") || raw.includes("today") || raw.includes("just now") || raw.includes("minute")) return true;
+    const daysMatch = raw.match(/(\d+)\s+day/);
+    if (daysMatch) return parseInt(daysMatch[1]) < 1;
+    return false;
+  };
+
+  const actNowFresh = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && isThisWeek(j));
+  const actNowOld = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isThisWeek(j));
   const actNowSent = jobs.filter(j => j.group === "act_now" && j.status !== "NEW");
   const actNow = actNowFresh;
   const review = jobs.filter(j => j.group === "review");
   const noContact = jobs.filter(j => j.group === "no_contact");
 
-  const showFresh = currentTime === "All" || currentTime === "Fresh";
+  const showFresh = currentTime === "All" || currentTime === "Fresh" || currentTime === "Week";
   const showEarlier = currentTime === "All" || currentTime === "Earlier";
 
+  const freshLabel = currentTime === "Fresh" ? "New (Today)" : "Past Week";
+
   container.innerHTML =
-    (showFresh ? sectionHtml("act_now", "Today's Roles", "Fresh in the last 7 days", actNow, "act-now") : "") +
+    (showFresh ? sectionHtml("act_now", "Today's Roles", freshLabel, actNow, "act-now") : "") +
     (showEarlier && actNowOld.length ? sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now", "", true) : "") +
     sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
     sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "") +
