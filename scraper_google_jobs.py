@@ -14,19 +14,27 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 
 def fetch_jobs_for_query(query):
-    params = {
-        "engine": "google_jobs",
-        "q": query,
-        "api_key": config.SERPAPI_KEY,
-        "hl": "en",
-    }
-    resp = requests.get(
-        config.SERPAPI_URL,
-        params=params,
-        timeout=config.REQUEST_TIMEOUT_SECONDS,
-    )
-    resp.raise_for_status()
-    return resp.json().get("jobs_results", [])
+    for key in [config.SERPAPI_KEY, config.SERPAPI_KEY_2]:
+        if not key:
+            continue
+        params = {
+            "engine": "google_jobs",
+            "q": query,
+            "api_key": key,
+            "hl": "en",
+        }
+        resp = requests.get(
+            config.SERPAPI_URL,
+            params=params,
+            timeout=config.REQUEST_TIMEOUT_SECONDS,
+        )
+        if resp.status_code == 429 or (resp.status_code == 200 and resp.json().get("error")):
+            print(f"[GoogleJobs] Key exhausted, trying next key")
+            continue
+        resp.raise_for_status()
+        return resp.json().get("jobs_results", [])
+    print("[GoogleJobs] All SerpAPI keys exhausted")
+    return []
 
 
 def is_excluded_title(title):

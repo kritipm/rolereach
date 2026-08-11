@@ -164,6 +164,7 @@ IIMJOBS_LOCATION_ALLOW_KEYWORDS = [
 # SerpApi Google Jobs — clean structured JSON, no bot-guard fight required
 SERPAPI_URL = "https://serpapi.com/search"
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
+SERPAPI_KEY_2 = os.environ.get("SERPAPI_KEY_2", "")
 
 JSEARCH_API_KEY = os.environ.get("JSEARCH_API_KEY", "")
 
