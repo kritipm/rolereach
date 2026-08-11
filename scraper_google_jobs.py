@@ -48,17 +48,6 @@ def is_excluded_company(company_name):
     return any(keyword in lowered for keyword in config.GOOGLE_JOBS_COMPANY_EXCLUDE_KEYWORDS)
 
 
-def is_aggregator_source(via_text):
-    """Skip listings served via job aggregators — they recycle stale posts."""
-    aggregators = [
-        "shine", "jooble", "jobrapido", "jobaaj", "glassdoor",
-        "indeed", "naukri", "timesjobs", "foundit", "monster",
-        "instahyre", "ziprecruiter", "simplyhired", "careerjet"
-    ]
-    lowered = (via_text or "").lower()
-    return any(agg in lowered for agg in aggregators)
-
-
 def is_recently_posted(posted_at_str):
     """True if posted within the last 48 hours. Unknown date = include."""
     if not posted_at_str:
@@ -169,9 +158,6 @@ def scrape_google_jobs_pm_jobs():
                     continue
                 company_name = job.get("companyName") or job.get("company_name") or ""
                 if is_excluded_company(company_name):
-                    continue
-                via_text = job.get("source") or job.get("via") or ""
-                if is_aggregator_source(via_text):
                     continue
                 location = job.get("location") or ""
                 if not is_location_allowed(location):
