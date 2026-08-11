@@ -871,7 +871,7 @@ async function loadJobs() {
     return false;
   };
 
-  const actNowFresh = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && isThisWeek(j));
+  const actNowFresh = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && (currentTime === "Fresh" ? isToday(j) : isThisWeek(j)));
   const actNowOld = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isThisWeek(j));
   const actNowSent = jobs.filter(j => j.group === "act_now" && j.status !== "NEW");
   const actNow = actNowFresh;
