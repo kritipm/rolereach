@@ -708,7 +708,10 @@ function jobRowHtml(job, isEarlier = false) {
 
   let contactChip = '<span class="contact-chip none">No contact</span>';
   if (job.hm_email) {
-    contactChip = `<a href="${escapeHtml(job.hm_email)}" class="contact-chip email" onclick="event.stopPropagation()">&#9993; ${escapeHtml(job.hm_email)}</a>`;
+    contactChip = `<span style="display:inline-flex; align-items:center; gap:6px;">
+  <a href="mailto:${escapeHtml(job.hm_email)}" class="contact-chip email" onclick="event.stopPropagation()">&#9993; ${escapeHtml(job.hm_email)}</a>
+  <button onclick="event.stopPropagation(); copyEmail('${escapeHtml(job.hm_email)}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:13px; padding:2px 4px; border-radius:4px;" title="Copy email">&#10697;</button>
+</span>`;
   }
   if (job.company_linkedin) {
     contactChip += `<a href="${escapeHtml(job.company_linkedin)}" target="_blank" class="contact-chip linkedin" onclick="event.stopPropagation()">&#8599; LinkedIn</a>`;
@@ -924,6 +927,23 @@ function copyFullEmail(jobId, name, role, company) {
     document.body.removeChild(el);
     if (btn) { btn.textContent = "Email Copied!"; setTimeout(() => { btn.textContent = "Copy Full Email"; }, 1500); }
   }
+}
+
+function copyEmail(email, btn) {
+  navigator.clipboard.writeText(email).then(() => {
+    btn.innerHTML = "&#10003;";
+    btn.style.color = "var(--pink)";
+    setTimeout(() => { btn.innerHTML = "&#10697;"; btn.style.color = "var(--text-muted)"; }, 1500);
+  }).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = email;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    btn.innerHTML = "&#10003;";
+    setTimeout(() => { btn.innerHTML = "&#10697;"; }, 1500);
+  });
 }
 
 // ---------- PIPELINE ----------
