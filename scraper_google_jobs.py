@@ -29,10 +29,13 @@ def fetch_jobs_for_query(query):
         json=payload,
         timeout=config.REQUEST_TIMEOUT_SECONDS,
     )
+    print(f"[Serper] Query '{query}' status: {resp.status_code}")
+    if resp.status_code != 200:
+        print(f"[Serper] Error response: {resp.text[:300]}")
     resp.raise_for_status()
     results = resp.json().get("jobs", [])
     if not results:
-        print(f"[Serper] Query '{query}' returned 0 jobs. Status: {resp.status_code}. Response preview: {str(resp.json())[:200]}")
+        print(f"[Serper] 0 jobs returned. Response: {str(resp.json())[:200]}")
     return results
 
 
@@ -150,7 +153,8 @@ def scrape_google_jobs_pm_jobs():
         for query in config.GOOGLE_JOBS_QUERIES:
             try:
                 jobs = fetch_jobs_for_query(query)
-            except requests.RequestException:
+            except requests.RequestException as e:
+                print(f"[Serper] Query '{query}' failed: {e}")
                 continue
 
             for job in jobs:
