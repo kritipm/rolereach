@@ -14,14 +14,14 @@ JSEARCH_HEADERS = {
 }
 
 QUERIES = [
-    "Associate Product Manager fresher Bangalore",
-    "APM fresher India",
-    "Growth Associate Product Manager India",
-    "founders office associate Bangalore",
-    "product analyst fresher Bangalore",
-    "junior product manager Bangalore startup",
-    "AI product manager fresher India",
-    "chief of staff associate Bangalore",
+    "product manager 0 to 2 years experience India",
+    "associate product manager India",
+    "APM India startup",
+    "product analyst India",
+    "growth product manager India",
+    "founders office product India",
+    "junior product manager India remote",
+    "product manager fresher India",
 ]
 
 def fetch_jobs_for_query(query):
