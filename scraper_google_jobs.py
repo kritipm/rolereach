@@ -30,7 +30,10 @@ def fetch_jobs_for_query(query):
         timeout=config.REQUEST_TIMEOUT_SECONDS,
     )
     resp.raise_for_status()
-    return resp.json().get("jobs", [])
+    results = resp.json().get("jobs", [])
+    if not results:
+        print(f"[Serper] Query '{query}' returned 0 jobs. Status: {resp.status_code}. Response preview: {str(resp.json())[:200]}")
+    return results
 
 
 def is_excluded_title(title):
