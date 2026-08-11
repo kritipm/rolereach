@@ -130,3 +130,9 @@ if __name__ == "__main__":
     for job in results:
         print(f"- [{job['author']}] {job['url']}")
         print(f"  {job['matched_keyword']}\n")
+
+    changes, unresolved = fix_company_names.fix_names()
+    if changes:
+        print(f"fix_company_names: corrected {len(changes)} name(s):")
+        for old_name, new_name in changes:
+            print(f"  {old_name!r} -> {new_name!r}")
