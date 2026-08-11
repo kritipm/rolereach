@@ -720,26 +720,33 @@ function jobRowHtml(job, isEarlier = false) {
     contactChip = '<span class="contact-chip none">No contact</span>';
   }
 
-  const draftHtml = job.email_draft
-    ? `<div class="draft-panel" id="draft-panel-${job.job_id}">
-         <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(job.email_draft)}</div>
-         <button class="copy-btn" data-copy-id="${job.job_id}" onclick="event.stopPropagation(); copyDraft('${job.job_id}')">Copy draft</button>
-         ${job.email_draft
-           ? `<button class="copy-btn" data-email-id="${job.job_id}" style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyDraft('${job.job_id}')">Copy Full Email</button>`
-           : `<button class="copy-btn"
-               data-email-id="${job.job_id}"
-               data-hm-name="${escapeHtml(job.hm_name||'')}"
-               data-title="${escapeHtml(job.title||'')}"
-               data-company="${escapeHtml(job.company||'')}"
-               style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);"
-               onclick="event.stopPropagation(); copyFullEmail('${job.job_id}', this.dataset.hmName, this.dataset.title, this.dataset.company)">Copy Full Email</button>`
-         }
-         <button class="copy-btn" style="margin-left:8px; background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">
-           ${job.status === 'NEW' ? 'Mark Sent' : job.status}
-         </button>
-         <button class="copy-btn" style="margin-left:8px; background:var(--card); color:var(--text-muted);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
-       </div>`
-    : "";
+  const draftHtml = job.email_draft ? (() => {
+    const lines = job.email_draft.split('\n');
+    const subjectLine = lines.find(l => l.startsWith('Subject:')) || 'Subject: Built and Shipped. Applying for APM.';
+    const bodyLines = lines.filter(l => !l.startsWith('Subject:'));
+    const bodyText = bodyLines.join('\n').trim();
+
+    return `<div class="draft-panel" id="draft-panel-${job.job_id}">
+
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
+        <span style="font-size:12px; font-weight:700; color:var(--lavender); flex:1;">${escapeHtml(subjectLine)}</span>
+        <button onclick="event.stopPropagation(); copyTextInline('${escapeHtml(subjectLine)}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:2px 6px; flex-shrink:0;" title="Copy subject">&#10697;</button>
+      </div>
+
+      <div style="position:relative;">
+        <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(bodyText)}</div>
+        <button onclick="event.stopPropagation(); copyDraftBody('${job.job_id}', this)" style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.4); border:1px solid var(--border); border-radius:6px; cursor:pointer; color:var(--text-muted); font-size:13px; padding:3px 8px;" title="Copy draft">&#10697;</button>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="copy-btn" style="background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">
+          ${job.status === 'NEW' ? 'Mark Sent' : job.status}
+        </button>
+        <button class="copy-btn" style="background:var(--card); color:var(--text-muted); border-color:var(--border);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
+      </div>
+
+    </div>`;
+  })() : "";
 
   return `<div class="job-row status-${statusKey}" id="job-${job.job_id}" onclick="toggleDraft('${job.job_id}')">
     <div class="job-top">
@@ -888,45 +895,41 @@ function toggleDraft(jobId) {
   panel.classList.add("open");
 }
 
-function copyDraft(jobId) {
-  const el = document.getElementById("draft-" + jobId);
-  const btn = document.querySelector('[data-copy-id="' + jobId + '"]');
-  if (!el || !btn) return;
-  const text = el.innerText;
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(() => {
-      btn.textContent = "Copied!";
-      btn.classList.add("copied");
-      setTimeout(() => { btn.textContent = "Copy draft"; btn.classList.remove("copied"); }, 1500);
-    });
-  } else {
-    const range = document.createRange();
-    range.selectNode(el);
-    window.getSelection().removeAllRanges();
-    window.getSelection().addRange(range);
+function copyTextInline(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = "&#10003;";
+    btn.style.color = "var(--pink)";
+    setTimeout(() => { btn.innerHTML = "&#10697;"; btn.style.color = "var(--text-muted)"; }, 1500);
+  }).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
     document.execCommand("copy");
-    window.getSelection().removeAllRanges();
-    btn.textContent = "Copied!";
-    setTimeout(() => { btn.textContent = "Copy draft"; }, 1500);
-  }
+    document.body.removeChild(ta);
+    btn.innerHTML = "&#10003;";
+    setTimeout(() => { btn.innerHTML = "&#10697;"; }, 1500);
+  });
 }
 
-function copyFullEmail(jobId, name, role, company) {
-  const template = `Subject: APM Application — Kriti Kumari\n\nHi ${name || "[Name]"},\n\nI noticed [specific observation about their product]. It made me look closer.\n\nI'm applying for the ${role || "[Role]"} at ${company || "[Company]"}. I come from a design background and have been building in product — activation flows, user reachability, documented tradeoffs. Not just thinking. Actually shipping.\n\nPortfolio with PRD specs and GitHub depth: https://kriti-portfolio-pm.vercel.app/\n\nCV attached. Happy to jump on a 15-minute call if this lands.\n\nKriti Kumari`;
-  const btn = document.querySelector('[data-email-id="' + jobId + '"]');
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(template).then(() => {
-      if (btn) { btn.textContent = "Email Copied!"; setTimeout(() => { btn.textContent = "Copy Full Email"; }, 1500); }
-    });
-  } else {
-    const el = document.createElement("textarea");
-    el.value = template;
-    document.body.appendChild(el);
-    el.select();
+function copyDraftBody(jobId, btn) {
+  const el = document.getElementById("draft-" + jobId);
+  if (!el) return;
+  const text = el.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.innerHTML = "&#10003;";
+    btn.style.color = "var(--pink)";
+    setTimeout(() => { btn.innerHTML = "&#10697;"; btn.style.color = "var(--text-muted)"; }, 1500);
+  }).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
     document.execCommand("copy");
-    document.body.removeChild(el);
-    if (btn) { btn.textContent = "Email Copied!"; setTimeout(() => { btn.textContent = "Copy Full Email"; }, 1500); }
-  }
+    document.body.removeChild(ta);
+    btn.innerHTML = "&#10003;";
+    setTimeout(() => { btn.innerHTML = "&#10697;"; }, 1500);
+  });
 }
 
 function copyEmail(email, btn) {
