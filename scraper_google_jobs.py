@@ -14,16 +14,23 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 
 def fetch_jobs_for_query(query):
-    params = {
-        "engine": "google_jobs",
-        "q": query,
-        "api_key": config.SERPAPI_KEY,
-        "chips": config.GOOGLE_JOBS_DATE_CHIP,
-        "hl": "en",
+    headers = {
+        "X-API-KEY": config.SERPER_API_KEY,
+        "Content-Type": "application/json",
     }
-    resp = requests.get(config.SERPAPI_URL, params=params, timeout=config.REQUEST_TIMEOUT_SECONDS)
+    payload = {
+        "q": query,
+        "location": "India",
+        "num": 10,
+    }
+    resp = requests.post(
+        config.SERPER_JOBS_URL,
+        headers=headers,
+        json=payload,
+        timeout=config.REQUEST_TIMEOUT_SECONDS,
+    )
     resp.raise_for_status()
-    return resp.json().get("jobs_results", [])
+    return resp.json().get("jobs", [])
 
 
 def is_excluded_title(title):
@@ -88,24 +95,26 @@ def is_non_official_domain(domain):
 
 
 def find_company_website(company_name):
-    """Search Google (via SerpApi) for the company's actual official site,
-    skipping job boards, aggregators, and social/media platforms."""
     if not company_name or company_name == "unknown":
         return None
 
-    params = {
-        "engine": "google",
-        "q": f"{company_name} official website",
-        "api_key": config.SERPAPI_KEY,
-        "hl": "en",
+    headers = {
+        "X-API-KEY": config.SERPER_API_KEY,
+        "Content-Type": "application/json",
     }
+    payload = {"q": f"{company_name} official website"}
     try:
-        resp = requests.get(config.SERPAPI_URL, params=params, timeout=config.REQUEST_TIMEOUT_SECONDS)
+        resp = requests.post(
+            config.SERPER_SEARCH_URL,
+            headers=headers,
+            json=payload,
+            timeout=config.REQUEST_TIMEOUT_SECONDS,
+        )
         resp.raise_for_status()
     except requests.RequestException:
         return None
 
-    for result in resp.json().get("organic_results", []):
+    for result in resp.json().get("organic", []):
         link = result.get("link") or ""
         domain = urllib.parse.urlparse(link).netloc.lower()
         if is_non_official_domain(domain):
@@ -117,21 +126,28 @@ def find_company_website(company_name):
 
 def build_job(job, query, experience_text):
     title = job.get("title") or job.get("job_title") or ""
-    job_id = job.get("job_id") or job.get("source_link") or title
-    company_name = job.get("company_name", "unknown")
+    company_name = job.get("companyName") or job.get("company_name") or "unknown"
+    location = job.get("location") or ""
+    via = job.get("source") or job.get("via") or ""
+    job_id = job.get("jobId") or job.get("job_id") or job.get("source_link") or title
+    posted_at = (
+        job.get("date")
+        or (job.get("detected_extensions") or {}).get("posted_at", "")
+        or ""
+    )
 
     return {
         "comment_id": job_id_to_int(job_id),
         "thread_id": 0,
         "author": company_name,
-        "posted_at": (job.get("detected_extensions") or {}).get("posted_at", ""),
+        "posted_at": posted_at,
         "matched_keyword": query,
-        "text": f"{title} | {job.get('location', '')} | via {job.get('via', '')}",
-        "url": job.get("source_link") or job.get("share_link") or "",
+        "text": f"{title} | {location} | via {via}",
+        "url": job.get("applyLink") or job.get("source_link") or job.get("share_link") or "",
         "company_url": find_company_website(company_name),
         "verified": False,
         "source": "google_jobs",
-        "external_id": job_id,
+        "external_id": str(job_id),
         "experience_range": experience_filter.extract_experience_range(experience_text),
     }
 
@@ -151,18 +167,21 @@ def scrape_google_jobs_pm_jobs():
                     continue
                 if is_excluded_title(title):
                     continue
-                if is_excluded_company(job.get("company_name")):
+                company_name = job.get("companyName") or job.get("company_name") or ""
+                if is_excluded_company(company_name):
                     continue
-
-                via_text = job.get("via", "")
+                via_text = job.get("source") or job.get("via") or ""
                 if is_aggregator_source(via_text):
                     continue
-                if not is_location_allowed(job.get("location")):
+                location = job.get("location") or ""
+                if not is_location_allowed(location):
                     continue
                 if not experience_filter.has_product_in_title(title):
                     continue
-
-                experience_text = " ".join(job.get("extensions") or []) + " " + (job.get("description") or "")
+                experience_text = " ".join(job.get("highlights", {}).get("items", []) if isinstance(job.get("highlights"), dict) else []) + " " + (job.get("description") or job.get("snippet") or "")
+                posted_at_str = job.get("date") or (job.get("detected_extensions") or {}).get("posted_at", "")
+                if not is_recently_posted(posted_at_str):
+                    continue
                 min_years = experience_filter.parse_min_experience(experience_text)
                 if not experience_filter.is_experience_allowed(min_years, f"{title} {experience_text}"):
                     continue
