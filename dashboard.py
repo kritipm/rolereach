@@ -125,7 +125,7 @@ def api_jobs():
     return jsonify(
         [
             {
-                "job_id": j["comment_id"],
+                "job_id": str(j["comment_id"]),
                 "title": j["title"],
                 "company": j["author"],
                 "source": j["source"],
@@ -151,6 +151,11 @@ def api_jobs():
 def api_action():
     payload = request.get_json(force=True, silent=True) or {}
     job_id = payload.get("job_id")
+    if job_id is not None:
+        try:
+            job_id = int(job_id)
+        except (ValueError, TypeError):
+            pass
     status = payload.get("status")
     timestamp = payload.get("timestamp") or datetime.now().isoformat(timespec="seconds")
 
@@ -711,27 +716,27 @@ function jobRowHtml(job, isEarlier = false) {
   const draftHtml = job.email_draft
     ? `<div class="draft-panel" id="draft-panel-${job.job_id}">
          <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(job.email_draft)}</div>
-         <button class="copy-btn" data-copy-id="${job.job_id}" onclick="event.stopPropagation(); copyDraft(${job.job_id})">Copy draft</button>
+         <button class="copy-btn" data-copy-id="${job.job_id}" onclick="event.stopPropagation(); copyDraft('${job.job_id}')">Copy draft</button>
          ${job.email_draft
-           ? `<button class="copy-btn" data-email-id="${job.job_id}" style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyDraft(${job.job_id})">Copy Full Email</button>`
+           ? `<button class="copy-btn" data-email-id="${job.job_id}" style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyDraft('${job.job_id}')">Copy Full Email</button>`
            : `<button class="copy-btn"
                data-email-id="${job.job_id}"
                data-hm-name="${escapeHtml(job.hm_name||'')}"
                data-title="${escapeHtml(job.title||'')}"
                data-company="${escapeHtml(job.company||'')}"
                style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);"
-               onclick="event.stopPropagation(); copyFullEmail(${job.job_id}, this.dataset.hmName, this.dataset.title, this.dataset.company)">Copy Full Email</button>`
+               onclick="event.stopPropagation(); copyFullEmail('${job.job_id}', this.dataset.hmName, this.dataset.title, this.dataset.company)">Copy Full Email</button>`
          }
-         <button class="copy-btn" style="margin-left:8px; background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus(${job.job_id}, '${job.status}')">
+         <button class="copy-btn" style="margin-left:8px; background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">
            ${job.status === 'NEW' ? 'Mark Sent' : job.status}
          </button>
          <button class="copy-btn" style="margin-left:8px; background:var(--card); color:var(--text-muted);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
        </div>`
     : "";
 
-  return `<div class="job-row status-${statusKey}" id="job-${job.job_id}" onclick="toggleDraft(${job.job_id})">
+  return `<div class="job-row status-${statusKey}" id="job-${job.job_id}" onclick="toggleDraft('${job.job_id}')">
     <div class="job-top">
-      <span class="status-pill ${statusPillClass}" onclick="event.stopPropagation(); cycleStatus(${job.job_id}, '${job.status}')">${pillContent}</span>
+      <span class="status-pill ${statusPillClass}" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">${pillContent}</span>
       <span class="job-title">${escapeHtml(job.title)}</span>
       ${expBadge}
     </div>
