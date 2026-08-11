@@ -109,28 +109,21 @@ def find_company_website(company_name):
 
 def build_job(job, query, experience_text):
     title = job.get("title") or job.get("job_title") or ""
-    company_name = job.get("companyName") or job.get("company_name") or "unknown"
-    location = job.get("location") or ""
-    via = job.get("source") or job.get("via") or ""
-    job_id = job.get("jobId") or job.get("job_id") or job.get("source_link") or title
-    posted_at = (
-        job.get("date")
-        or (job.get("detected_extensions") or {}).get("posted_at", "")
-        or ""
-    )
+    company_name = job.get("company_name", "unknown")
+    job_id = job.get("job_id") or job.get("source_link") or title
 
     return {
         "comment_id": job_id_to_int(job_id),
         "thread_id": 0,
         "author": company_name,
-        "posted_at": posted_at,
+        "posted_at": (job.get("detected_extensions") or {}).get("posted_at", ""),
         "matched_keyword": query,
-        "text": f"{title} | {location} | via {via}",
-        "url": job.get("applyLink") or job.get("source_link") or job.get("share_link") or "",
+        "text": f"{title} | {job.get('location', '')} | via {job.get('via', '')}",
+        "url": job.get("source_link") or job.get("share_link") or "",
         "company_url": find_company_website(company_name),
         "verified": False,
         "source": "google_jobs",
-        "external_id": str(job_id),
+        "external_id": job_id,
         "experience_range": experience_filter.extract_experience_range(experience_text),
     }
 
@@ -150,16 +143,14 @@ def scrape_google_jobs_pm_jobs():
                     continue
                 if is_excluded_title(title):
                     continue
-                company_name = job.get("companyName") or job.get("company_name") or ""
-                if is_excluded_company(company_name):
+                if is_excluded_company(job.get("company_name")):
                     continue
-                location = job.get("location") or ""
-                if not is_location_allowed(location):
+                if not is_location_allowed(job.get("location")):
                     continue
                 if not experience_filter.has_product_in_title(title):
                     continue
-                experience_text = " ".join(job.get("highlights", {}).get("items", []) if isinstance(job.get("highlights"), dict) else []) + " " + (job.get("description") or job.get("snippet") or "")
-                posted_at_str = job.get("date") or (job.get("detected_extensions") or {}).get("posted_at", "")
+                experience_text = " ".join(job.get("extensions") or []) + " " + (job.get("description") or "")
+                posted_at_str = (job.get("detected_extensions") or {}).get("posted_at", "")
                 if not is_recently_posted(posted_at_str):
                     continue
                 min_years = experience_filter.parse_min_experience(experience_text)
