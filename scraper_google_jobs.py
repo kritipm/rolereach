@@ -19,9 +19,11 @@ def fetch_jobs_for_query(query):
         "Content-Type": "application/json",
     }
     payload = {
-        "q": query,
+        "q": query + " jobs",
         "location": "India",
         "num": 10,
+        "gl": "in",
+        "hl": "en",
     }
     resp = requests.post(
         config.SERPER_JOBS_URL,
@@ -33,9 +35,10 @@ def fetch_jobs_for_query(query):
     if resp.status_code != 200:
         print(f"[Serper] Error response: {resp.text[:300]}")
     resp.raise_for_status()
-    results = resp.json().get("jobs", [])
+    data = resp.json()
+    results = data.get("jobs", [])
     if not results:
-        print(f"[Serper] 0 jobs returned. Response: {str(resp.json())[:200]}")
+        print(f"[Serper] 0 jobs in response. Keys present: {list(data.keys())}")
     return results
 
 

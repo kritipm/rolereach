@@ -166,7 +166,7 @@ SERPAPI_URL = "https://serpapi.com/search"
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 
 SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
-SERPER_JOBS_URL = "https://google.serper.dev/jobs"
+SERPER_JOBS_URL = "https://google.serper.dev/search"
 SERPER_SEARCH_URL = "https://google.serper.dev/search"
 
 GOOGLE_JOBS_QUERIES = [
