@@ -9,6 +9,7 @@ def get_apollo_headers():
     return {
         "Content-Type": "application/json",
         "Cache-Control": "no-cache",
+        "x-api-key": config.APOLLO_API_KEY,
     }
 
 def find_email_apollo(company_url, company_name):
@@ -41,7 +42,6 @@ def find_email_apollo(company_url, company_name):
 
     for title in titles_to_try:
         payload = {
-            "api_key": config.APOLLO_API_KEY,
             "organization_name": company_name,
             "title": title,
         }
