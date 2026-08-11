@@ -14,32 +14,19 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 
 def fetch_jobs_for_query(query):
-    headers = {
-        "X-API-KEY": config.SERPER_API_KEY,
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "q": query + " jobs",
-        "location": "India",
-        "num": 10,
-        "gl": "in",
+    params = {
+        "engine": "google_jobs",
+        "q": query,
+        "api_key": config.SERPAPI_KEY,
         "hl": "en",
     }
-    resp = requests.post(
-        config.SERPER_JOBS_URL,
-        headers=headers,
-        json=payload,
+    resp = requests.get(
+        config.SERPAPI_URL,
+        params=params,
         timeout=config.REQUEST_TIMEOUT_SECONDS,
     )
-    print(f"[Serper] Query '{query}' status: {resp.status_code}")
-    if resp.status_code != 200:
-        print(f"[Serper] Error response: {resp.text[:300]}")
     resp.raise_for_status()
-    data = resp.json()
-    results = data.get("jobs", [])
-    if not results:
-        print(f"[Serper] 0 jobs in response. Keys present: {list(data.keys())}")
-    return results
+    return resp.json().get("jobs_results", [])
 
 
 def is_excluded_title(title):
@@ -93,26 +80,24 @@ def is_non_official_domain(domain):
 
 
 def find_company_website(company_name):
+    """Search Google (via SerpApi) for the company's actual official site,
+    skipping job boards, aggregators, and social/media platforms."""
     if not company_name or company_name == "unknown":
         return None
 
-    headers = {
-        "X-API-KEY": config.SERPER_API_KEY,
-        "Content-Type": "application/json",
+    params = {
+        "engine": "google",
+        "q": f"{company_name} official website",
+        "api_key": config.SERPAPI_KEY,
+        "hl": "en",
     }
-    payload = {"q": f"{company_name} official website"}
     try:
-        resp = requests.post(
-            config.SERPER_SEARCH_URL,
-            headers=headers,
-            json=payload,
-            timeout=config.REQUEST_TIMEOUT_SECONDS,
-        )
+        resp = requests.get(config.SERPAPI_URL, params=params, timeout=config.REQUEST_TIMEOUT_SECONDS)
         resp.raise_for_status()
     except requests.RequestException:
         return None
 
-    for result in resp.json().get("organic", []):
+    for result in resp.json().get("organic_results", []):
         link = result.get("link") or ""
         domain = urllib.parse.urlparse(link).netloc.lower()
         if is_non_official_domain(domain):
@@ -156,8 +141,7 @@ def scrape_google_jobs_pm_jobs():
         for query in config.GOOGLE_JOBS_QUERIES:
             try:
                 jobs = fetch_jobs_for_query(query)
-            except requests.RequestException as e:
-                print(f"[Serper] Query '{query}' failed: {e}")
+            except requests.RequestException:
                 continue
 
             for job in jobs:

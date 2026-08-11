@@ -165,10 +165,6 @@ IIMJOBS_LOCATION_ALLOW_KEYWORDS = [
 SERPAPI_URL = "https://serpapi.com/search"
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 
-SERPER_API_KEY = os.environ.get("SERPER_API_KEY", "")
-SERPER_JOBS_URL = "https://google.serper.dev/search"
-SERPER_SEARCH_URL = "https://google.serper.dev/search"
-
 JSEARCH_API_KEY = os.environ.get("JSEARCH_API_KEY", "")
 
 GOOGLE_JOBS_QUERIES = [
@@ -193,7 +189,7 @@ GOOGLE_JOBS_QUERIES = [
     "founding team product manager bangalore",
     "product growth associate india",
 ]
-# GOOGLE_JOBS_DATE_CHIP = "date_posted:month"  # SerpApi-specific param, unused since Serper.dev migration
+# GOOGLE_JOBS_DATE_CHIP = "date_posted:month"  # unused — fetch_jobs_for_query() doesn't pass a date chip
 
 # Internshala job listings — no bot protection, plain requests works
 INTERNSHALA_URLS = [

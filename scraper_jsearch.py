@@ -7,7 +7,7 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-JSEARCH_URL = "https://jsearch.p.rapidapi.com/search"
+JSEARCH_URL = "https://jsearch.p.rapidapi.com/search-v2"
 JSEARCH_HEADERS = {
     "X-RapidAPI-Key": config.JSEARCH_API_KEY,
     "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
