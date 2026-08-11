@@ -44,18 +44,22 @@ def fetch_jobs_for_query(query):
         resp.raise_for_status()
 
     data = resp.json()
-    print(f"[JSearch] Response keys: {list(data.keys())}")
+    jobs_data = data.get("data", [])
 
-    jobs = data.get("data", [])
-    if jobs and len(jobs) > 0:
-        first = jobs[0]
-        print(f"[JSearch] First item type: {type(first).__name__}")
-        if isinstance(first, dict):
-            print(f"[JSearch] First item keys: {list(first.keys())[:10]}")
-        else:
-            print(f"[JSearch] First item value: {str(first)[:100]}")
+    print(f"[JSearch] data type: {type(jobs_data).__name__}, length/keys: {len(jobs_data) if isinstance(jobs_data, list) else list(jobs_data.keys())[:5] if isinstance(jobs_data, dict) else 'unknown'}")
 
-    return [j for j in jobs if isinstance(j, dict)]
+    if isinstance(jobs_data, list):
+        return [j for j in jobs_data if isinstance(j, dict)]
+    elif isinstance(jobs_data, dict):
+        # data might be nested — check for jobs inside
+        print(f"[JSearch] data dict keys: {list(jobs_data.keys())}")
+        for key in ["jobs", "results", "items", "job_listings"]:
+            if key in jobs_data:
+                items = jobs_data[key]
+                if isinstance(items, list):
+                    return [j for j in items if isinstance(j, dict)]
+        return []
+    return []
 
 def is_excluded_title(title):
     lowered = title.lower()
