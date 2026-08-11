@@ -17,6 +17,7 @@ PIPELINE_STEPS = [
     "scraper_jsearch.py",
     "scraper_internshala.py",
     "enricher_snov.py",
+    "enricher_apollo.py",
     "drafter_claude.py",
     "telegram_bot.py",
 ]

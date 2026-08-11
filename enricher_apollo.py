@@ -1,80 +1,97 @@
 import os
-import urllib.parse
-
 import requests
-from dotenv import load_dotenv
-
+import config
 import database
 
-load_dotenv()
+APOLLO_API_URL = "https://api.apollo.io/v1/people/match"
 
-APOLLO_API_KEY = os.environ["APOLLO_API_KEY"]
-APOLLO_SEARCH_URL = "https://api.apollo.io/api/v1/mixed_people/search"
-HM_TITLES = ["product", "founder", "ceo"]
-
-
-def extract_domain(company_url):
-    parsed = urllib.parse.urlparse(company_url if "://" in company_url else f"//{company_url}")
-    domain = parsed.netloc or parsed.path
-    return domain.split("@")[-1].removeprefix("www.").split("/")[0]
-
-
-def find_hiring_manager(domain):
-    headers = {"Content-Type": "application/json", "x-api-key": APOLLO_API_KEY}
-    body = {
-        "q_organization_domains": domain,
-        "person_titles": HM_TITLES,
-        "page": 1,
-        "per_page": 5,
+def get_apollo_headers():
+    return {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-cache",
     }
-    resp = requests.post(APOLLO_SEARCH_URL, headers=headers, json=body, timeout=20)
 
-    if resp.status_code != 200:
-        return None, None, f"HTTP {resp.status_code}: {resp.text[:200]}"
+def find_email_apollo(company_url, company_name):
+    """Try to find a PM/founder email at the company using Apollo people match."""
+    if not config.APOLLO_API_KEY:
+        return None, None
 
-    people = resp.json().get("people", [])
-    if not people:
-        return None, None, "no matching people found"
+    # Try different titles in priority order
+    titles_to_try = [
+        "Product Manager",
+        "Associate Product Manager",
+        "Founder",
+        "Co-Founder",
+        "CEO",
+        "CTO",
+        "Head of Product",
+    ]
 
-    person = people[0]
-    name = person.get("name")
-    email = person.get("email")
-    return name, email, None
+    domain = None
+    if company_url:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(company_url)
+            domain = parsed.netloc.replace("www.", "")
+        except Exception:
+            pass
+
+    if not domain and not company_name:
+        return None, None
+
+    for title in titles_to_try:
+        payload = {
+            "api_key": config.APOLLO_API_KEY,
+            "organization_name": company_name,
+            "title": title,
+        }
+        if domain:
+            payload["domain"] = domain
+
+        try:
+            resp = requests.post(
+                APOLLO_API_URL,
+                json=payload,
+                headers=get_apollo_headers(),
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                person = data.get("person")
+                if person:
+                    email = person.get("email")
+                    name = person.get("name")
+                    if email and "apollo.io" not in email:
+                        print(f"[Apollo] Found {name} <{email}> at {company_name} ({title})")
+                        return name, email
+        except requests.RequestException as e:
+            print(f"[Apollo] Request failed for {company_name}: {e}")
+            continue
+
+    return None, None
 
 
-def enrich_jobs(limit=5):
-    jobs = database.fetch_jobs_needing_enrichment(limit=limit)
-    results = []
+def enrich_with_apollo():
+    """Enrich jobs that have no email yet using Apollo."""
+    jobs = database.fetch_jobs_needing_enrichment()
+    enriched = 0
 
     for job in jobs:
-        domain = extract_domain(job["company_url"])
-        name, email, error = find_hiring_manager(domain)
+        company_url = job.get("company_url") or ""
+        company_name = job.get("author") or ""
 
-        if name and email:
+        if not company_url and not company_name:
+            continue
+
+        name, email = find_email_apollo(company_url, company_name)
+        if email:
             database.update_hiring_manager(job["comment_id"], name, email)
+            enriched += 1
 
-        results.append(
-            {
-                "job_url": job["url"],
-                "company_url": job["company_url"],
-                "domain": domain,
-                "hm_name": name,
-                "hm_email": email,
-                "error": error,
-            }
-        )
-
-    return results
+    return enriched
 
 
 if __name__ == "__main__":
     database.init_db()
-    for result in enrich_jobs(limit=5):
-        print(f"- {result['job_url']}")
-        print(f"  domain: {result['domain']}")
-        if result["error"]:
-            print(f"  FAILED: {result['error']}")
-        else:
-            print(f"  hm_name: {result['hm_name']}")
-            print(f"  hm_email: {result['hm_email']}")
-        print()
+    count = enrich_with_apollo()
+    print(f"Apollo enrichment: {count} jobs enriched with email")
