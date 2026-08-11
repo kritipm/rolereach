@@ -41,8 +41,21 @@ def fetch_jobs_for_query(query):
     print(f"[JSearch] Query '{query}' status: {resp.status_code}")
     if resp.status_code != 200:
         print(f"[JSearch] Error: {resp.text[:200]}")
-    resp.raise_for_status()
-    return resp.json().get("data", [])
+        resp.raise_for_status()
+
+    data = resp.json()
+    print(f"[JSearch] Response keys: {list(data.keys())}")
+
+    jobs = data.get("data", [])
+    if jobs and len(jobs) > 0:
+        first = jobs[0]
+        print(f"[JSearch] First item type: {type(first).__name__}")
+        if isinstance(first, dict):
+            print(f"[JSearch] First item keys: {list(first.keys())[:10]}")
+        else:
+            print(f"[JSearch] First item value: {str(first)[:100]}")
+
+    return [j for j in jobs if isinstance(j, dict)]
 
 def is_excluded_title(title):
     lowered = title.lower()
