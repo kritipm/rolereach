@@ -712,7 +712,16 @@ function jobRowHtml(job, isEarlier = false) {
     ? `<div class="draft-panel" id="draft-panel-${job.job_id}">
          <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(job.email_draft)}</div>
          <button class="copy-btn" data-copy-id="${job.job_id}" onclick="event.stopPropagation(); copyDraft(${job.job_id})">Copy draft</button>
-         <button class="copy-btn" data-email-id="${job.job_id}" style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyFullEmail(${job.job_id}, '${(job.hm_name||'').replace(/'/g,"\\'")}', '${(job.title||'').replace(/'/g,"\\'")}', '${(job.company||'').replace(/'/g,"\\'")}')">Copy Full Email</button>
+         ${job.email_draft
+           ? `<button class="copy-btn" data-email-id="${job.job_id}" style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyDraft(${job.job_id})">Copy Full Email</button>`
+           : `<button class="copy-btn"
+               data-email-id="${job.job_id}"
+               data-hm-name="${escapeHtml(job.hm_name||'')}"
+               data-title="${escapeHtml(job.title||'')}"
+               data-company="${escapeHtml(job.company||'')}"
+               style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);"
+               onclick="event.stopPropagation(); copyFullEmail(${job.job_id}, this.dataset.hmName, this.dataset.title, this.dataset.company)">Copy Full Email</button>`
+         }
          <button class="copy-btn" style="margin-left:8px; background:var(--card); color:var(--text-muted);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
        </div>`
     : "";
