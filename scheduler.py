@@ -12,10 +12,8 @@ import config
 PIPELINE_STEPS = [
     "main.py",              # Hacker News
     "scraper_cutshort.py",
-    "scraper_iimjobs.py",
     "scraper_google_jobs.py",
     "scraper_jsearch.py",
-    "scraper_yc.py",
     "scraper_internshala.py",
     "enricher_snov.py",
     "drafter_claude.py",
@@ -70,6 +68,10 @@ def run_pipeline():
 
     for script_name in PIPELINE_STEPS:
         run_step(script_name)
+
+    if datetime.now().weekday() in [0, 2, 4]:  # Mon, Wed, Fri
+        run_step("scraper_iimjobs.py")
+        run_step("scraper_yc.py")
 
     sync_db_to_railway()
 
