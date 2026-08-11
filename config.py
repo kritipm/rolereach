@@ -171,8 +171,6 @@ SERPER_SEARCH_URL = "https://google.serper.dev/search"
 
 JSEARCH_API_KEY = os.environ.get("JSEARCH_API_KEY", "")
 
-APOLLO_API_KEY = os.environ.get("APOLLO_API_KEY", "")
-
 GOOGLE_JOBS_QUERIES = [
     "Associate Product Manager Bangalore startup",
     "Product Manager Bangalore Series A",
