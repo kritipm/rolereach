@@ -186,10 +186,6 @@ def scrape_google_jobs_pm_jobs():
                 if not experience_filter.is_experience_allowed(min_years, f"{title} {experience_text}"):
                     continue
 
-                posted_at_str = (job.get("detected_extensions") or {}).get("posted_at", "")
-                if not is_recently_posted(posted_at_str):
-                    continue
-
                 record = build_job(job, query, experience_text)
                 database.save_job(conn, record)
                 matches.append(record)
