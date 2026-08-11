@@ -722,6 +722,9 @@ function jobRowHtml(job, isEarlier = false) {
                style="margin-left:8px; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);"
                onclick="event.stopPropagation(); copyFullEmail(${job.job_id}, this.dataset.hmName, this.dataset.title, this.dataset.company)">Copy Full Email</button>`
          }
+         <button class="copy-btn" style="margin-left:8px; background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus(${job.job_id}, '${job.status}')">
+           ${job.status === 'NEW' ? 'Mark Sent' : job.status}
+         </button>
          <button class="copy-btn" style="margin-left:8px; background:var(--card); color:var(--text-muted);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
        </div>`
     : "";
@@ -741,10 +744,11 @@ function jobRowHtml(job, isEarlier = false) {
   </div>`;
 }
 
-function sectionHtml(key, title, meta, jobs, cls, emptyMessage, isEarlier = false) {
+function sectionHtml(key, title, meta, jobs, cls, emptyMessage = "", isEarlier = false, isMuted = false) {
+  const muteStyle = isMuted ? 'style="opacity:0.5"' : '';
   if (jobs.length === 0) {
     if (!emptyMessage) return "";
-    return `<div class="section-block">
+    return `<div class="section-block" ${muteStyle}>
       <div class="section-label ${cls}">
         <span class="section-title">${title}</span>
         <span class="section-meta">${meta}</span>
@@ -752,7 +756,7 @@ function sectionHtml(key, title, meta, jobs, cls, emptyMessage, isEarlier = fals
       <div class="empty-note">${emptyMessage}</div>
     </div>`;
   }
-  return `<div class="section-block">
+  return `<div class="section-block" ${muteStyle}>
     <div class="section-label ${cls}">
       <span class="section-title">${title}</span>
       <span class="section-meta">${meta}</span>
@@ -830,8 +834,8 @@ async function loadJobs() {
 
   const actNowFresh = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && isRecent(j));
   const actNowOld = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isRecent(j));
-  const actNowActioned = jobs.filter(j => j.group === "act_now" && j.status !== "NEW");
-  const actNow = [...actNowActioned, ...actNowFresh];
+  const actNowSent = jobs.filter(j => j.group === "act_now" && j.status !== "NEW");
+  const actNow = actNowFresh;
   const review = jobs.filter(j => j.group === "review");
   const noContact = jobs.filter(j => j.group === "no_contact");
 
@@ -842,7 +846,8 @@ async function loadJobs() {
     (showFresh ? sectionHtml("act_now", "Today's Roles", "Fresh in the last 7 days", actNow, "act-now") : "") +
     (showEarlier && actNowOld.length ? sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now", "", true) : "") +
     sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
-    sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "");
+    sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "") +
+    (actNowSent.length ? sectionHtml("act_now", "Already Applied", "Marked sent, replied, or interview", actNowSent, "act-now", "", false, true) : "");
 }
 
 async function cycleStatus(jobId, currentStatus) {
