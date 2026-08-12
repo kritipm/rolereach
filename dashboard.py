@@ -720,7 +720,11 @@ function jobRowHtml(job, isEarlier = false) {
     contactChip += `<a href="${escapeHtml(job.company_linkedin)}" target="_blank" class="contact-chip linkedin" onclick="event.stopPropagation()">&#8599; LinkedIn</a>`;
   }
   if (!job.hm_email && !job.company_linkedin) {
-    contactChip = '<span class="contact-chip none">No contact</span>';
+    if (job.url) {
+      contactChip = `<a href="${escapeHtml(job.url)}" target="_blank" class="contact-chip none" style="color:var(--text-muted); text-decoration:none;" onclick="event.stopPropagation()">&#8599; View Posting</a>`;
+    } else {
+      contactChip = '<span class="contact-chip none">No contact</span>';
+    }
   }
 
   const draftHtml = job.email_draft ? (() => {
@@ -729,8 +733,14 @@ function jobRowHtml(job, isEarlier = false) {
     const bodyLines = lines.filter(l => !l.startsWith('Subject:'));
     const bodyText = bodyLines.join('\n').trim();
 
-    return `<div class="draft-panel" id="draft-panel-${job.job_id}">
+    const urlRow = job.url ? `
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
+        <span style="font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; margin-right:8px;">${escapeHtml(job.url)}</span>
+        <a href="${escapeHtml(job.url)}" target="_blank" onclick="event.stopPropagation()" style="background:var(--card); border:1px solid var(--border); color:var(--text-muted); font-size:11px; font-weight:700; padding:4px 10px; border-radius:6px; text-decoration:none; white-space:nowrap; flex-shrink:0;">Visit &#8599;</a>
+      </div>` : "";
 
+    return `<div class="draft-panel" id="draft-panel-${job.job_id}">
+      ${urlRow}
       <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
         <span style="font-size:12px; font-weight:700; color:var(--lavender); flex:1;">${escapeHtml(subjectLine)}</span>
         <button onclick="event.stopPropagation(); copyTextInline('${escapeHtml(subjectLine)}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:2px 6px; flex-shrink:0;" title="Copy subject">&#10697;</button>
