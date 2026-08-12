@@ -278,36 +278,39 @@ DASHBOARD_HTML = r"""
 <title>RoleReach</title>
 <style>
   :root {
-    --bg: #09081C;
-    --card: #100F2A;
-    --card-hover: #171540;
-    --border: #1A183C;
-    --pink: #C830F0;
-    --pink-glow: rgba(200,48,240,0.4);
-    --pink-dark: #180828;
-    --pink-border: #2C0A42;
-    --purple: #8060C0;
-    --lavender: #DDB0FF;
+    --bg: #0D0B1E;
+    --card: #13112A;
+    --card-hover: #1A1840;
+    --border: #1E1B3A;
+
+    --pink: #FF2D7A;
+    --pink-glow: rgba(255,45,122,0.4);
+    --pink-dark: #1A0A14;
+    --pink-border: #2A0A1E;
+
+    --orange: #FF6B00;
+    --orange-glow: rgba(255,107,0,0.4);
+    --orange-dark: #1A0E00;
+    --orange-border: #2A1800;
+
+    --coral: #FF2D55;
+    --coral-glow: rgba(255,45,85,0.4);
+    --coral-dark: #1A0A10;
+    --coral-border: #2A0A18;
+
+    --purple: #9B59FF;
+    --lavender: #C084FC;
     --lavender-dark: #140C2C;
     --lavender-border: #201848;
+
     --text-primary: #FFFFFF;
-    --text-secondary: #EFEFEF;
-    --text-muted: #B0B0B0;
-    --text-dim: #505060;
+    --text-secondary: #E0DEFF;
+    --text-muted: #8B87B0;
+    --text-dim: #3D3A60;
 
-    --orange: #FF6B35;
-    --orange-dark: #1C0E08;
-    --orange-border: #2C1808;
-    --orange-glow: rgba(255,107,53,0.3);
-
-    --coral: #FF3366;
-    --coral-dark: #1C0810;
-    --coral-border: #2C0A1A;
-    --coral-glow: rgba(255,51,102,0.3);
-
-    --gradient-primary: linear-gradient(135deg, var(--pink), var(--purple));
-    --gradient-warm: linear-gradient(135deg, var(--orange), var(--coral));
-    --gradient-full: linear-gradient(135deg, var(--orange), var(--coral), var(--pink));
+    --gradient-hot: linear-gradient(135deg, #FF6B00, #FF2D7A);
+    --gradient-cool: linear-gradient(135deg, #9B59FF, #FF2D7A);
+    --gradient-full: linear-gradient(135deg, #FF6B00, #FF2D55, #FF2D7A, #9B59FF);
   }
   * { box-sizing: border-box; }
   body {
@@ -370,12 +373,12 @@ DASHBOARD_HTML = r"""
     width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
   }
   .tier-circle.magenta {
-    background: radial-gradient(circle at 35% 30%, #FF6B35, var(--coral));
-    box-shadow: 0 0 24px var(--coral-glow), 0 0 8px var(--orange-glow);
+    background: radial-gradient(circle at 35% 30%, #FF9500, #FF2D7A);
+    box-shadow: 0 0 28px var(--pink-glow), 0 0 12px var(--orange-glow);
   }
   .tier-circle.lavender {
-    background: radial-gradient(circle at 35% 30%, #F0A0FF, var(--pink));
-    box-shadow: 0 0 20px var(--pink-glow);
+    background: radial-gradient(circle at 35% 30%, #C084FC, #9B59FF);
+    box-shadow: 0 0 20px rgba(155,89,255,0.4);
   }
   .tier-count { font-size: 30px; font-weight: 800; color: var(--text-primary); }
   .tier-label { font-size: 13px; font-weight: 700; color: var(--lavender); text-transform: uppercase; letter-spacing: 0.4px; }
@@ -392,7 +395,7 @@ DASHBOARD_HTML = r"""
   .source-bar-track { height: 6px; border-radius: 4px; background: rgba(255,255,255,0.05); overflow: hidden; }
   .source-bar-fill {
     height: 100%; border-radius: 4px;
-    background: var(--gradient-full);
+    background: var(--gradient-hot);
     width: 0%; animation: growBar 0.9s ease forwards;
   }
   @keyframes growBar { to { width: var(--target-width); } }
@@ -423,9 +426,9 @@ DASHBOARD_HTML = r"""
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }
-  .summary-card.sent .value { color: var(--coral); }
+  .summary-card.sent .value { color: var(--pink); }
   .summary-card.replied .value { color: var(--orange); }
-  .summary-card.interview .value { color: var(--pink); }
+  .summary-card.interview .value { color: var(--purple); }
 
   .filter-row { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
   .filter-pill {
@@ -443,66 +446,43 @@ DASHBOARD_HTML = r"""
   .section-label.act-now { border-left-color: var(--pink); }
   .section-label.review { border-left-color: var(--lavender); }
   .section-label.earlier { border-left-color: rgba(200,48,240,0.3); }
-  .section-block.earlier-block .job-row {
-    background: var(--orange-dark);
-    border: 1px solid var(--orange-border);
-    border-left: 3px solid var(--orange);
-    box-shadow: inset 0 0 20px rgba(255,107,53,0.05);
+  .section-block.today-email .job-row {
+    background: var(--pink-dark);
+    border: 1px solid var(--pink-border);
+    border-left: 3px solid var(--pink);
+    box-shadow: inset 0 0 20px rgba(255,45,122,0.04);
   }
-  .section-block.earlier-block .job-row:hover {
-    background: rgba(255,107,53,0.08);
-  }
-  .section-block.earlier-block .job-title {
-    color: var(--text-secondary);
-  }
-  .section-block.earlier-block .section-label {
-    border-left-color: var(--orange);
-  }
-  .section-block.earlier-block .section-title {
-    color: var(--orange);
-  }
-  .section-block.earlier-block .section-meta {
-    color: rgba(255,107,53,0.7);
-  }
-  .section-block.earlier-block .section-count-badge {
-    background: var(--orange-dark);
-    color: var(--orange);
-    border: 1px solid var(--orange-border);
-  }
-  .section-block.earlier-block .exp-badge.tier1 {
-    background: var(--orange-dark);
-    border-color: var(--orange-border);
-    color: var(--orange);
-    box-shadow: 0 0 10px var(--orange-glow);
-  }
-  .section-block.earlier-block .location-pill {
-    background: var(--orange-dark);
-    border-color: var(--orange-border);
-    color: var(--orange);
-    box-shadow: 0 0 8px var(--orange-glow);
-  }
-  .section-block.coral-block .job-row {
+  .section-block.today-email .section-label { border-left-color: var(--pink); }
+  .section-block.today-email .section-title { color: var(--pink); }
+  .section-block.today-email .section-count-badge { background: var(--pink-dark); color: var(--pink); border: 1px solid var(--pink-border); }
+
+  .section-block.today-noemail .job-row {
     background: var(--coral-dark);
     border: 1px solid var(--coral-border);
     border-left: 3px solid var(--coral);
   }
-  .section-block.coral-block .job-row:hover {
-    background: rgba(255,51,102,0.08);
+  .section-block.today-noemail .section-label { border-left-color: var(--coral); }
+  .section-block.today-noemail .section-title { color: var(--coral); }
+  .section-block.today-noemail .section-count-badge { background: var(--coral-dark); color: var(--coral); border: 1px solid var(--coral-border); }
+
+  .section-block.earlier-email .job-row {
+    background: var(--orange-dark);
+    border: 1px solid var(--orange-border);
+    border-left: 3px solid var(--orange);
   }
-  .section-block.coral-block .section-label {
-    border-left-color: var(--coral);
+  .section-block.earlier-email .section-label { border-left-color: var(--orange); }
+  .section-block.earlier-email .section-title { color: var(--orange); }
+  .section-block.earlier-email .section-count-badge { background: var(--orange-dark); color: var(--orange); border: 1px solid var(--orange-border); }
+
+  .section-block.earlier-noemail .job-row {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--text-dim);
+    opacity: 0.5;
   }
-  .section-block.coral-block .section-title {
-    color: var(--coral);
-  }
-  .section-block.coral-block .section-meta {
-    color: rgba(255,51,102,0.7);
-  }
-  .section-block.coral-block .section-count-badge {
-    background: var(--coral-dark);
-    color: var(--coral);
-    border: 1px solid var(--coral-border);
-  }
+  .section-block.earlier-noemail .section-label { border-left-color: var(--text-dim); }
+  .section-block.earlier-noemail .section-title { color: var(--text-muted); }
+  .section-block.earlier-noemail .section-count-badge { background: var(--card); color: var(--text-muted); border: 1px solid var(--border); }
   .section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-primary); }
   .section-meta { font-size: 12.5px; color: var(--text-muted); }
   .section-count-badge {
@@ -593,7 +573,7 @@ DASHBOARD_HTML = r"""
   .goal-track { height: 12px; border-radius: 8px; background: rgba(255,255,255,0.06); overflow: hidden; }
   .goal-fill {
     height: 100%; border-radius: 8px;
-    background: var(--gradient-warm);
+    background: var(--gradient-hot);
     box-shadow: 0 0 14px var(--orange-glow);
     transition: width 0.5s ease;
   }
@@ -750,12 +730,12 @@ async function loadAgent() {
       <div class="hero-caption">new roles today</div>
     </div>
     <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:24px; margin-top:-4px; background:var(--card); border:1px solid var(--border); padding:5px 14px; border-radius:999px;">
-      <span style="width:6px; height:6px; border-radius:50%; background:var(--gradient-primary); display:inline-block;"></span>
+      <span style="width:6px; height:6px; border-radius:50%; background:var(--gradient-hot); display:inline-block;"></span>
       <span style="font-size:12px; font-weight:700; color:var(--text-muted); letter-spacing:0.4px;">${d.jobs_count} total in pipeline</span>
     </div>`;
 
   document.getElementById("agent-chips").innerHTML = `
-    <span class="chip chip-pink"><span class="dot"></span>${d.drafts_ready} cold email drafts ready</span>
+    <span class="chip chip-pink"><span class="dot"></span>${d.new_today} new roles scraped today</span>
     <span class="chip chip-neutral">Runs daily at ${d.runs_daily_at}</span>`;
 
   document.getElementById("agent-tiers").innerHTML = `
@@ -993,24 +973,28 @@ async function loadJobs() {
     return false;
   };
 
-  const actNowFresh = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && (currentTime === "Fresh" ? isToday(j) : isThisWeek(j)));
-  const actNowOld = jobs.filter(j => j.group === "act_now" && j.status === "NEW" && !isThisWeek(j));
-  const actNowSent = jobs.filter(j => j.group === "act_now" && j.status !== "NEW");
-  const actNow = actNowFresh;
-  const review = jobs.filter(j => j.group === "review");
-  const noContact = jobs.filter(j => j.group === "no_contact");
+  const freshFilter = (j) => currentTime === "Fresh" ? isToday(j) : isThisWeek(j);
+
+  const todayWithEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && j.hm_email);
+  const todayNoEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && !j.hm_email);
+  const earlierWithEmail = jobs.filter(j => j.status === "NEW" && !isThisWeek(j) && j.hm_email);
+  const earlierNoEmail = jobs.filter(j => j.status === "NEW" && !isThisWeek(j) && !j.hm_email);
+  const review = jobs.filter(j => j.group === "review" && j.status === "NEW");
+  const alreadyActioned = jobs.filter(j => j.status !== "NEW");
 
   const showFresh = currentTime === "All" || currentTime === "Fresh" || currentTime === "Week";
   const showEarlier = currentTime === "All" || currentTime === "Earlier";
 
-  const freshLabel = currentTime === "Fresh" ? "New (Today)" : "Past Week";
+  const freshLabel = currentTime === "Fresh" ? "Today only" : "Past week";
 
   container.innerHTML =
-    (showFresh ? sectionHtml("act_now", "Today's Roles", freshLabel, actNow, "act-now") : "") +
-    (showEarlier && actNowOld.length ? `<div class="section-block earlier-block">${sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now", "", true)}</div>` : "") +
-    sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
-    (noContact.length ? `<div class="section-block coral-block">${sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "")}</div>` : "") +
-    (actNowSent.length ? sectionHtml("act_now", "Already Applied", "Marked sent, replied, or interview", actNowSent, "act-now", "", false, true) : "");
+    (showFresh && todayWithEmail.length ? `<div class="section-block today-email">${sectionHtml("today_email", "Today — With Email", freshLabel + " · draft ready to send", todayWithEmail, "act-now")}</div>` : "") +
+    (showFresh && todayNoEmail.length ? `<div class="section-block today-noemail">${sectionHtml("today_noemail", "Today — No Email Found", freshLabel + " · visit posting to apply directly", todayNoEmail, "")}</div>` : "") +
+    (showFresh && !todayWithEmail.length && !todayNoEmail.length ? '<div class="empty-note">No new roles today yet. Check back after 8 AM.</div>' : "") +
+    (showEarlier && earlierWithEmail.length ? `<div class="section-block earlier-email">${sectionHtml("earlier_email", "Earlier — With Email", "Older roles · draft ready", earlierWithEmail, "act-now", "", true)}</div>` : "") +
+    (showEarlier && earlierNoEmail.length ? `<div class="section-block earlier-noemail">${sectionHtml("earlier_noemail", "Earlier — No Contact", "Older roles · nothing to action", earlierNoEmail, "", "", true)}</div>` : "") +
+    (review.length ? sectionHtml("review", "LinkedIn Found", "No direct email · reach out on LinkedIn", review, "review") : "") +
+    (alreadyActioned.length ? `<div style="opacity:0.45; margin-top:24px;">${sectionHtml("applied", "Already Applied", "Sent, replied, or skipped", alreadyActioned, "act-now")}</div>` : "");
 }
 
 async function cycleStatus(jobId, currentStatus) {
@@ -1095,9 +1079,9 @@ function ringSvg(pct, glow) {
   const opacity = glow ? 1 : (pct > 0 ? 1 : 0.35);
   return `<svg width="120" height="120" viewBox="0 0 120 120">
     <defs><linearGradient id="gradPinkPurple" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF6B35"/>
-      <stop offset="50%" stop-color="#FF3366"/>
-      <stop offset="100%" stop-color="#C830F0"/>
+      <stop offset="0%" stop-color="#FF6B00"/>
+      <stop offset="50%" stop-color="#FF2D7A"/>
+      <stop offset="100%" stop-color="#9B59FF"/>
     </linearGradient></defs>
     <circle cx="60" cy="60" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="10"/>
     <circle cx="60" cy="60" r="${r}" fill="none" stroke="${strokeColor}" stroke-width="10"
@@ -1138,13 +1122,12 @@ async function loadPipeline() {
     </div>`;
   }).join("");
 
-  const goalPct = Math.min(100, Math.round(100 * d.weekly_goal.current / d.weekly_goal.target));
   document.getElementById("pipeline-goal").innerHTML = `
     <div class="goal-top">
-      <span class="goal-label">Weekly goal &mdash; emails sent</span>
-      <span class="goal-counter mono">${d.weekly_goal.current}/${d.weekly_goal.target}</span>
+      <span class="goal-label">Emails sent this week</span>
+      <span class="goal-counter mono" style="background: var(--gradient-hot); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">${d.weekly_goal.current}</span>
     </div>
-    <div class="goal-track"><div class="goal-fill" style="width:${goalPct}%"></div></div>`;
+    <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Keep going &mdash; aim for 10+ per week to maximize response rate</div>`;
 
   document.getElementById("perf-tbody").innerHTML = d.sources.map(s => `
     <tr>
