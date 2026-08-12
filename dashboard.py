@@ -278,39 +278,24 @@ DASHBOARD_HTML = r"""
 <title>RoleReach</title>
 <style>
   :root {
-    --bg: #0D0B1E;
-    --card: #13112A;
-    --card-hover: #1A1840;
-    --border: #1E1B3A;
-
-    --pink: #FF2D7A;
-    --pink-glow: rgba(255,45,122,0.4);
-    --pink-dark: #1A0A14;
-    --pink-border: #2A0A1E;
-
-    --orange: #FF6B00;
-    --orange-glow: rgba(255,107,0,0.4);
-    --orange-dark: #1A0E00;
-    --orange-border: #2A1800;
-
-    --coral: #FF2D55;
-    --coral-glow: rgba(255,45,85,0.4);
-    --coral-dark: #1A0A10;
-    --coral-border: #2A0A18;
-
-    --purple: #9B59FF;
-    --lavender: #C084FC;
+    --bg: #09081C;
+    --card: #100F2A;
+    --card-hover: #171540;
+    --border: #1A183C;
+    --pink: #C830F0;
+    --pink-glow: rgba(200,48,240,0.4);
+    --pink-dark: #180828;
+    --pink-border: #2C0A42;
+    --purple: #8060C0;
+    --lavender: #DDB0FF;
     --lavender-dark: #140C2C;
     --lavender-border: #201848;
-
     --text-primary: #FFFFFF;
-    --text-secondary: #E0DEFF;
-    --text-muted: #8B87B0;
-    --text-dim: #3D3A60;
-
-    --gradient-hot: linear-gradient(135deg, #FF6B00, #FF2D7A);
-    --gradient-cool: linear-gradient(135deg, #9B59FF, #FF2D7A);
-    --gradient-full: linear-gradient(135deg, #FF6B00, #FF2D55, #FF2D7A, #9B59FF);
+    --text-secondary: #EFEFEF;
+    --text-muted: #B0B0B0;
+    --text-dim: #505060;
+    --gradient-hot: linear-gradient(135deg, #8060C0, #C830F0);
+    --gradient-full: linear-gradient(135deg, #8060C0, #C830F0, #DDB0FF);
   }
   * { box-sizing: border-box; }
   body {
@@ -372,14 +357,8 @@ DASHBOARD_HTML = r"""
   .tier-circle {
     width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
   }
-  .tier-circle.magenta {
-    background: radial-gradient(circle at 35% 30%, #FF9500, #FF2D7A);
-    box-shadow: 0 0 28px var(--pink-glow), 0 0 12px var(--orange-glow);
-  }
-  .tier-circle.lavender {
-    background: radial-gradient(circle at 35% 30%, #C084FC, #9B59FF);
-    box-shadow: 0 0 20px rgba(155,89,255,0.4);
-  }
+  .tier-circle.magenta { background: radial-gradient(circle at 35% 30%, #F0A0FF, var(--pink)); box-shadow: 0 0 20px var(--pink-glow); }
+  .tier-circle.lavender { background: radial-gradient(circle at 35% 30%, #F0E0FF, var(--lavender)); box-shadow: 0 0 20px rgba(221,176,255,0.35); }
   .tier-count { font-size: 30px; font-weight: 800; color: var(--text-primary); }
   .tier-label { font-size: 13px; font-weight: 700; color: var(--lavender); text-transform: uppercase; letter-spacing: 0.4px; }
 
@@ -394,8 +373,7 @@ DASHBOARD_HTML = r"""
   .source-line-top .count { color: var(--text-primary); font-weight: 700; }
   .source-bar-track { height: 6px; border-radius: 4px; background: rgba(255,255,255,0.05); overflow: hidden; }
   .source-bar-fill {
-    height: 100%; border-radius: 4px;
-    background: var(--gradient-hot);
+    height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--purple), var(--pink));
     width: 0%; animation: growBar 0.9s ease forwards;
   }
   @keyframes growBar { to { width: var(--target-width); } }
@@ -420,15 +398,10 @@ DASHBOARD_HTML = r"""
   .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
   .summary-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px; }
   .summary-card .value { font-size: 26px; font-weight: 800; }
-  .summary-card.total .value {
-    background: var(--gradient-full);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
+  .summary-card.total .value { color: var(--text-primary); -webkit-text-fill-color: unset; }
   .summary-card.sent .value { color: var(--pink); }
-  .summary-card.replied .value { color: var(--orange); }
-  .summary-card.interview .value { color: var(--purple); }
+  .summary-card.replied .value { color: var(--purple); }
+  .summary-card.interview .value { color: var(--lavender); }
 
   .filter-row { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
   .filter-pill {
@@ -447,32 +420,32 @@ DASHBOARD_HTML = r"""
   .section-label.review { border-left-color: var(--lavender); }
   .section-label.earlier { border-left-color: rgba(200,48,240,0.3); }
   .section-block.today-email .job-row {
-    background: var(--pink-dark);
-    border: 1px solid var(--pink-border);
+    background: var(--card);
+    border: 1px solid var(--border);
     border-left: 3px solid var(--pink);
-    box-shadow: inset 0 0 20px rgba(255,45,122,0.04);
   }
   .section-block.today-email .section-label { border-left-color: var(--pink); }
   .section-block.today-email .section-title { color: var(--pink); }
   .section-block.today-email .section-count-badge { background: var(--pink-dark); color: var(--pink); border: 1px solid var(--pink-border); }
 
   .section-block.today-noemail .job-row {
-    background: var(--coral-dark);
-    border: 1px solid var(--coral-border);
-    border-left: 3px solid var(--coral);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--purple);
   }
-  .section-block.today-noemail .section-label { border-left-color: var(--coral); }
-  .section-block.today-noemail .section-title { color: var(--coral); }
-  .section-block.today-noemail .section-count-badge { background: var(--coral-dark); color: var(--coral); border: 1px solid var(--coral-border); }
+  .section-block.today-noemail .section-label { border-left-color: var(--purple); }
+  .section-block.today-noemail .section-title { color: var(--lavender); }
+  .section-block.today-noemail .section-count-badge { background: var(--lavender-dark); color: var(--lavender); border: 1px solid var(--lavender-border); }
 
   .section-block.earlier-email .job-row {
-    background: var(--orange-dark);
-    border: 1px solid var(--orange-border);
-    border-left: 3px solid var(--orange);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--purple);
+    opacity: 0.85;
   }
-  .section-block.earlier-email .section-label { border-left-color: var(--orange); }
-  .section-block.earlier-email .section-title { color: var(--orange); }
-  .section-block.earlier-email .section-count-badge { background: var(--orange-dark); color: var(--orange); border: 1px solid var(--orange-border); }
+  .section-block.earlier-email .section-label { border-left-color: var(--purple); }
+  .section-block.earlier-email .section-title { color: var(--purple); }
+  .section-block.earlier-email .section-count-badge { background: var(--card); color: var(--purple); border: 1px solid var(--border); }
 
   .section-block.earlier-noemail .job-row {
     background: var(--card);
@@ -572,9 +545,8 @@ DASHBOARD_HTML = r"""
   .goal-counter { font-size: 22px; font-weight: 800; color: var(--pink); }
   .goal-track { height: 12px; border-radius: 8px; background: rgba(255,255,255,0.06); overflow: hidden; }
   .goal-fill {
-    height: 100%; border-radius: 8px;
-    background: var(--gradient-hot);
-    box-shadow: 0 0 14px var(--orange-glow);
+    height: 100%; border-radius: 8px; background: linear-gradient(90deg, var(--purple), var(--pink));
+    box-shadow: 0 0 14px var(--pink-glow);
     transition: width 0.5s ease;
   }
 
@@ -726,7 +698,7 @@ async function loadAgent() {
 
   document.getElementById("agent-hero").innerHTML = `
     <div class="hero-row">
-      <div class="hero-number mono" style="background: var(--gradient-full); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">${d.new_today}</div>
+      <div class="hero-number mono" style="background: linear-gradient(90deg, #FFFFFF, var(--pink)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">${d.new_today}</div>
       <div class="hero-caption">new roles today</div>
     </div>
     <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:24px; margin-top:-4px; background:var(--card); border:1px solid var(--border); padding:5px 14px; border-radius:999px;">
@@ -852,6 +824,17 @@ function jobRowHtml(job, isEarlier = false) {
     </div>`;
   })() : "";
 
+  const urlPanel = !job.email_draft && job.url ? `
+    <div class="draft-panel" id="draft-panel-${job.job_id}">
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.2); border-radius:8px; padding:10px 14px; margin-bottom:10px;">
+        <span style="font-size:12px; color:var(--text-muted); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">${escapeHtml(job.url)}</span>
+        <a href="${escapeHtml(job.url)}" target="_blank" onclick="event.stopPropagation()" style="background:var(--card); border:1px solid var(--border); color:var(--text-muted); font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; text-decoration:none; white-space:nowrap; flex-shrink:0;">Visit Posting &#8599;</a>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="copy-btn" style="background:var(--card); color:var(--text-muted); border-color:var(--border);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
+      </div>
+    </div>` : "";
+
   return `<div class="job-row status-${statusKey}" id="job-${job.job_id}" onclick="toggleDraft('${job.job_id}')">
     <div class="job-top">
       ${statusPillHtml}
@@ -863,7 +846,7 @@ function jobRowHtml(job, isEarlier = false) {
       <span class="location-pill">&#128205; ${escapeHtml(job.location)}</span>
       <span class="job-bottom-right">${contactChip}</span>
     </div>
-    ${draftHtml}
+    ${draftHtml}${urlPanel}
   </div>`;
 }
 
@@ -1079,9 +1062,7 @@ function ringSvg(pct, glow) {
   const opacity = glow ? 1 : (pct > 0 ? 1 : 0.35);
   return `<svg width="120" height="120" viewBox="0 0 120 120">
     <defs><linearGradient id="gradPinkPurple" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF6B00"/>
-      <stop offset="50%" stop-color="#FF2D7A"/>
-      <stop offset="100%" stop-color="#9B59FF"/>
+      <stop offset="0%" stop-color="#8060C0"/><stop offset="100%" stop-color="#C830F0"/>
     </linearGradient></defs>
     <circle cx="60" cy="60" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="10"/>
     <circle cx="60" cy="60" r="${r}" fill="none" stroke="${strokeColor}" stroke-width="10"
