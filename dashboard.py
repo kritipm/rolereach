@@ -976,9 +976,9 @@ async function loadJobs() {
   const freshFilter = (j) => currentTime === "Fresh" ? isToday(j) : isThisWeek(j);
 
   const todayWithEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && j.hm_email);
-  const todayNoEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && !j.hm_email);
+  const todayNoEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && !j.hm_email && j.group === "no_contact");
   const earlierWithEmail = jobs.filter(j => j.status === "NEW" && !isThisWeek(j) && j.hm_email);
-  const earlierNoEmail = jobs.filter(j => j.status === "NEW" && !isThisWeek(j) && !j.hm_email);
+  const earlierNoEmail = jobs.filter(j => j.status === "NEW" && !isThisWeek(j) && !j.hm_email && j.group === "no_contact");
   const review = jobs.filter(j => j.group === "review" && j.status === "NEW");
   const alreadyActioned = jobs.filter(j => j.status !== "NEW");
 
