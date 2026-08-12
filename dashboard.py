@@ -824,16 +824,37 @@ function jobRowHtml(job, isEarlier = false) {
     </div>`;
   })() : "";
 
-  const urlPanel = !job.email_draft && job.url ? `
-    <div class="draft-panel" id="draft-panel-${job.job_id}">
-      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.2); border-radius:8px; padding:10px 14px; margin-bottom:10px;">
-        <span style="font-size:12px; color:var(--text-muted); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-right:8px;">${escapeHtml(job.url)}</span>
-        <a href="${escapeHtml(job.url)}" target="_blank" onclick="event.stopPropagation()" style="background:var(--card); border:1px solid var(--border); color:var(--text-muted); font-size:11px; font-weight:700; padding:5px 12px; border-radius:6px; text-decoration:none; white-space:nowrap; flex-shrink:0;">Visit Posting &#8599;</a>
+  const urlPanel = !job.email_draft && job.url ? (() => {
+    const subjectLine = "Subject: Built and Shipped. Applying for APM.";
+    const templateBody = `Hi there,\n\nI noticed something specific about ${job.company || "[Company]"}'s product worth paying attention to.\n\nI'm applying for the ${job.title || "[Role]"} role. I come from a design background and have been building in product — activation flows, user reachability, documented tradeoffs. Not just thinking. Actually shipping.\n\nPortfolio: https://kriti-portfolio-pm.vercel.app/\nCV attached.\n\nWarmly,\nKriti`;
+    const draftId = "draft-" + job.job_id;
+    const subjectId = "draft-subject-" + job.job_id;
+
+    return `<div class="draft-panel" id="draft-panel-${job.job_id}">
+
+      <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
+        <span id="${subjectId}" style="font-size:12px; font-weight:700; color:var(--lavender); flex:1;">${escapeHtml(subjectLine)}</span>
+        <button onclick="event.stopPropagation(); copyTextInline('${subjectLine}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:2px 6px; flex-shrink:0;" title="Copy subject">&#10697;</button>
       </div>
-      <div style="display:flex; gap:8px; margin-top:8px;">
+
+      <div style="position:relative;">
+        <div class="draft-box" id="${draftId}">${escapeHtml(templateBody)}</div>
+        <button onclick="event.stopPropagation(); copyDraftBody('${job.job_id}', this)" style="position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.4); border:1px solid var(--border); border-radius:6px; cursor:pointer; color:var(--text-muted); font-size:13px; padding:3px 8px;" title="Copy draft">&#10697;</button>
+      </div>
+
+      <div style="margin-top:8px; margin-bottom:10px;">
+        <a href="${escapeHtml(job.url)}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px; color:var(--text-muted); text-decoration:none;">&#8599; ${escapeHtml(job.url)}</a>
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:4px;">
+        <button class="copy-btn" style="background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">
+          ${job.status === 'NEW' ? 'Mark Sent' : job.status}
+        </button>
         <button class="copy-btn" style="background:var(--card); color:var(--text-muted); border-color:var(--border);" onclick="event.stopPropagation(); document.getElementById('draft-panel-${job.job_id}').classList.remove('open')">Close</button>
       </div>
-    </div>` : "";
+
+    </div>`;
+  })() : "";
 
   return `<div class="job-row status-${statusKey}" id="job-${job.job_id}" onclick="toggleDraft('${job.job_id}')">
     <div class="job-top">
