@@ -10,13 +10,14 @@ import telegram_bot
 app = Flask(__name__)
 
 STATUS_CYCLE = ["NEW", "Sent", "Replied", "Interview", "Skip"]
-SOURCES = ["hackernews", "cutshort", "iimjobs", "google_jobs", "internshala", "yc"]
+SOURCES = ["hackernews", "cutshort", "iimjobs", "google_jobs", "internshala", "jsearch", "yc"]
 SOURCE_LABELS = {
     "hackernews": "Hacker News",
     "cutshort": "Cutshort",
     "iimjobs": "iimjobs",
     "google_jobs": "Google Jobs",
     "internshala": "Internshala",
+    "jsearch": "JSearch",
     "yc": "YC Jobs",
 }
 WEEKLY_GOAL_TARGET = 10
@@ -199,6 +200,8 @@ def api_pipeline():
             continue
         try:
             actioned_at = datetime.fromisoformat(a["actioned_at"])
+            if actioned_at.tzinfo is not None:
+                actioned_at = actioned_at.replace(tzinfo=None)
         except (ValueError, TypeError):
             continue
         if actioned_at >= week_ago:
@@ -291,6 +294,20 @@ DASHBOARD_HTML = r"""
     --text-secondary: #EFEFEF;
     --text-muted: #B0B0B0;
     --text-dim: #505060;
+
+    --orange: #FF6B35;
+    --orange-dark: #1C0E08;
+    --orange-border: #2C1808;
+    --orange-glow: rgba(255,107,53,0.3);
+
+    --coral: #FF3366;
+    --coral-dark: #1C0810;
+    --coral-border: #2C0A1A;
+    --coral-glow: rgba(255,51,102,0.3);
+
+    --gradient-primary: linear-gradient(135deg, var(--pink), var(--purple));
+    --gradient-warm: linear-gradient(135deg, var(--orange), var(--coral));
+    --gradient-full: linear-gradient(135deg, var(--orange), var(--coral), var(--pink));
   }
   * { box-sizing: border-box; }
   body {
@@ -352,8 +369,14 @@ DASHBOARD_HTML = r"""
   .tier-circle {
     width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
   }
-  .tier-circle.magenta { background: radial-gradient(circle at 35% 30%, #F0A0FF, var(--pink)); box-shadow: 0 0 20px var(--pink-glow); }
-  .tier-circle.lavender { background: radial-gradient(circle at 35% 30%, #F0E0FF, var(--lavender)); box-shadow: 0 0 20px rgba(221,176,255,0.35); }
+  .tier-circle.magenta {
+    background: radial-gradient(circle at 35% 30%, #FF6B35, var(--coral));
+    box-shadow: 0 0 24px var(--coral-glow), 0 0 8px var(--orange-glow);
+  }
+  .tier-circle.lavender {
+    background: radial-gradient(circle at 35% 30%, #F0A0FF, var(--pink));
+    box-shadow: 0 0 20px var(--pink-glow);
+  }
   .tier-count { font-size: 30px; font-weight: 800; color: var(--text-primary); }
   .tier-label { font-size: 13px; font-weight: 700; color: var(--lavender); text-transform: uppercase; letter-spacing: 0.4px; }
 
@@ -368,7 +391,8 @@ DASHBOARD_HTML = r"""
   .source-line-top .count { color: var(--text-primary); font-weight: 700; }
   .source-bar-track { height: 6px; border-radius: 4px; background: rgba(255,255,255,0.05); overflow: hidden; }
   .source-bar-fill {
-    height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--purple), var(--pink));
+    height: 100%; border-radius: 4px;
+    background: var(--gradient-full);
     width: 0%; animation: growBar 0.9s ease forwards;
   }
   @keyframes growBar { to { width: var(--target-width); } }
@@ -393,10 +417,15 @@ DASHBOARD_HTML = r"""
   .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
   .summary-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px; }
   .summary-card .value { font-size: 26px; font-weight: 800; }
-  .summary-card.total .value { color: var(--text-primary); }
-  .summary-card.sent .value { color: var(--pink); }
-  .summary-card.replied .value { color: var(--purple); }
-  .summary-card.interview .value { color: var(--lavender); }
+  .summary-card.total .value {
+    background: var(--gradient-full);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .summary-card.sent .value { color: var(--coral); }
+  .summary-card.replied .value { color: var(--orange); }
+  .summary-card.interview .value { color: var(--pink); }
 
   .filter-row { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
   .filter-pill {
@@ -414,8 +443,66 @@ DASHBOARD_HTML = r"""
   .section-label.act-now { border-left-color: var(--pink); }
   .section-label.review { border-left-color: var(--lavender); }
   .section-label.earlier { border-left-color: rgba(200,48,240,0.3); }
-  .section-block.earlier-block .job-row { opacity: 0.75; border-left-color: rgba(200,48,240,0.2); }
-  .section-block.earlier-block .job-title { color: var(--text-muted); }
+  .section-block.earlier-block .job-row {
+    background: var(--orange-dark);
+    border: 1px solid var(--orange-border);
+    border-left: 3px solid var(--orange);
+    box-shadow: inset 0 0 20px rgba(255,107,53,0.05);
+  }
+  .section-block.earlier-block .job-row:hover {
+    background: rgba(255,107,53,0.08);
+  }
+  .section-block.earlier-block .job-title {
+    color: var(--text-secondary);
+  }
+  .section-block.earlier-block .section-label {
+    border-left-color: var(--orange);
+  }
+  .section-block.earlier-block .section-title {
+    color: var(--orange);
+  }
+  .section-block.earlier-block .section-meta {
+    color: rgba(255,107,53,0.7);
+  }
+  .section-block.earlier-block .section-count-badge {
+    background: var(--orange-dark);
+    color: var(--orange);
+    border: 1px solid var(--orange-border);
+  }
+  .section-block.earlier-block .exp-badge.tier1 {
+    background: var(--orange-dark);
+    border-color: var(--orange-border);
+    color: var(--orange);
+    box-shadow: 0 0 10px var(--orange-glow);
+  }
+  .section-block.earlier-block .location-pill {
+    background: var(--orange-dark);
+    border-color: var(--orange-border);
+    color: var(--orange);
+    box-shadow: 0 0 8px var(--orange-glow);
+  }
+  .section-block.coral-block .job-row {
+    background: var(--coral-dark);
+    border: 1px solid var(--coral-border);
+    border-left: 3px solid var(--coral);
+  }
+  .section-block.coral-block .job-row:hover {
+    background: rgba(255,51,102,0.08);
+  }
+  .section-block.coral-block .section-label {
+    border-left-color: var(--coral);
+  }
+  .section-block.coral-block .section-title {
+    color: var(--coral);
+  }
+  .section-block.coral-block .section-meta {
+    color: rgba(255,51,102,0.7);
+  }
+  .section-block.coral-block .section-count-badge {
+    background: var(--coral-dark);
+    color: var(--coral);
+    border: 1px solid var(--coral-border);
+  }
   .section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-primary); }
   .section-meta { font-size: 12.5px; color: var(--text-muted); }
   .section-count-badge {
@@ -505,8 +592,10 @@ DASHBOARD_HTML = r"""
   .goal-counter { font-size: 22px; font-weight: 800; color: var(--pink); }
   .goal-track { height: 12px; border-radius: 8px; background: rgba(255,255,255,0.06); overflow: hidden; }
   .goal-fill {
-    height: 100%; border-radius: 8px; background: linear-gradient(90deg, var(--purple), var(--pink));
-    box-shadow: 0 0 14px var(--pink-glow); transition: width 0.5s ease;
+    height: 100%; border-radius: 8px;
+    background: var(--gradient-warm);
+    box-shadow: 0 0 14px var(--orange-glow);
+    transition: width 0.5s ease;
   }
 
   .perf-table { width: 100%; border-collapse: collapse; }
@@ -657,9 +746,12 @@ async function loadAgent() {
 
   document.getElementById("agent-hero").innerHTML = `
     <div class="hero-row">
-      <div class="hero-number mono">${d.new_today}</div>
+      <div class="hero-number mono" style="background: var(--gradient-full); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">${d.new_today}</div>
       <div class="hero-caption">new roles today</div>
-      <div style="font-size:14px; color:var(--text-muted); margin-left:8px;">/ ${d.jobs_count} total in pipeline</div>
+    </div>
+    <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:24px; margin-top:-4px; background:var(--card); border:1px solid var(--border); padding:5px 14px; border-radius:999px;">
+      <span style="width:6px; height:6px; border-radius:50%; background:var(--gradient-primary); display:inline-block;"></span>
+      <span style="font-size:12px; font-weight:700; color:var(--text-muted); letter-spacing:0.4px;">${d.jobs_count} total in pipeline</span>
     </div>`;
 
   document.getElementById("agent-chips").innerHTML = `
@@ -917,7 +1009,7 @@ async function loadJobs() {
     (showFresh ? sectionHtml("act_now", "Today's Roles", freshLabel, actNow, "act-now") : "") +
     (showEarlier && actNowOld.length ? `<div class="section-block earlier-block">${sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now", "", true)}</div>` : "") +
     sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
-    sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "") +
+    (noContact.length ? `<div class="section-block coral-block">${sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "")}</div>` : "") +
     (actNowSent.length ? sectionHtml("act_now", "Already Applied", "Marked sent, replied, or interview", actNowSent, "act-now", "", false, true) : "");
 }
 
@@ -1003,7 +1095,9 @@ function ringSvg(pct, glow) {
   const opacity = glow ? 1 : (pct > 0 ? 1 : 0.35);
   return `<svg width="120" height="120" viewBox="0 0 120 120">
     <defs><linearGradient id="gradPinkPurple" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#8060C0"/><stop offset="100%" stop-color="#C830F0"/>
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="50%" stop-color="#FF3366"/>
+      <stop offset="100%" stop-color="#C830F0"/>
     </linearGradient></defs>
     <circle cx="60" cy="60" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="10"/>
     <circle cx="60" cy="60" r="${r}" fill="none" stroke="${strokeColor}" stroke-width="10"
