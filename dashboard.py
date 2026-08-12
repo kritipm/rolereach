@@ -90,9 +90,20 @@ def api_agent():
     no_contact_count = sum(1 for j in jobs if not j["has_email"] and not j["has_linkedin"])
     drafts_ready = sum(1 for j in jobs if j.get("email_draft"))
 
+    today_cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+    new_today = 0
+    with database.get_connection() as conn:
+        result = conn.execute(
+            "SELECT COUNT(*) as count FROM jobs WHERE posted_at >= ? OR notified = 0",
+            (today_cutoff,)
+        ).fetchone()
+        if result:
+            new_today = result["count"] if result["count"] else 0
+
     return jsonify(
         {
             "jobs_count": len(jobs),
+            "new_today": new_today,
             "drafts_ready": drafts_ready,
             "last_run": last_run_timestamp(),
             "runs_daily_at": "8:00 AM",
@@ -402,6 +413,9 @@ DASHBOARD_HTML = r"""
   }
   .section-label.act-now { border-left-color: var(--pink); }
   .section-label.review { border-left-color: var(--lavender); }
+  .section-label.earlier { border-left-color: rgba(200,48,240,0.3); }
+  .section-block.earlier-block .job-row { opacity: 0.75; border-left-color: rgba(200,48,240,0.2); }
+  .section-block.earlier-block .job-title { color: var(--text-muted); }
   .section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-primary); }
   .section-meta { font-size: 12.5px; color: var(--text-muted); }
   .section-count-badge {
@@ -643,8 +657,9 @@ async function loadAgent() {
 
   document.getElementById("agent-hero").innerHTML = `
     <div class="hero-row">
-      <div class="hero-number mono">${d.jobs_count}</div>
-      <div class="hero-caption">PM roles found today</div>
+      <div class="hero-number mono">${d.new_today}</div>
+      <div class="hero-caption">new roles today</div>
+      <div style="font-size:14px; color:var(--text-muted); margin-left:8px;">/ ${d.jobs_count} total in pipeline</div>
     </div>`;
 
   document.getElementById("agent-chips").innerHTML = `
@@ -706,8 +721,12 @@ function jobRowHtml(job, isEarlier = false) {
 
   const statusPillClass = statusKey === "new" ? "" : statusKey;
   const pillContent = job.status === "NEW"
-    ? (isEarlier ? "EARLIER" : `<span class="pulse-dot"></span>NEW`)
+    ? (isEarlier ? "" : `<span class="pulse-dot"></span>NEW`)
     : `${STATUS_ICON[job.status]} ${job.status}`;
+
+  const statusPillHtml = pillContent
+    ? `<span class="status-pill ${statusPillClass}" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">${pillContent}</span>`
+    : "";
 
   let contactChip = '<span class="contact-chip none">No contact</span>';
   if (job.hm_email) {
@@ -763,7 +782,7 @@ function jobRowHtml(job, isEarlier = false) {
 
   return `<div class="job-row status-${statusKey}" id="job-${job.job_id}" onclick="toggleDraft('${job.job_id}')">
     <div class="job-top">
-      <span class="status-pill ${statusPillClass}" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">${pillContent}</span>
+      ${statusPillHtml}
       <span class="job-title">${escapeHtml(job.title)}</span>
       ${expBadge}
     </div>
@@ -896,7 +915,7 @@ async function loadJobs() {
 
   container.innerHTML =
     (showFresh ? sectionHtml("act_now", "Today's Roles", freshLabel, actNow, "act-now") : "") +
-    (showEarlier && actNowOld.length ? sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now", "", true) : "") +
+    (showEarlier && actNowOld.length ? `<div class="section-block earlier-block">${sectionHtml("act_now", "Earlier Opportunities", "Older unactioned roles", actNowOld, "act-now", "", true)}</div>` : "") +
     sectionHtml("review", "Review", "LinkedIn found, no direct email yet", review, "review") +
     sectionHtml("no_contact", "No contact", "Nothing found yet", noContact, "") +
     (actNowSent.length ? sectionHtml("act_now", "Already Applied", "Marked sent, replied, or interview", actNowSent, "act-now", "", false, true) : "");
