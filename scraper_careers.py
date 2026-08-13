@@ -13,11 +13,10 @@ import fix_company_names
 # careers page) Workday / Darwinbox / SmartRecruiters / Freshteam signatures.
 # Only the two already confirmed live on Lever remain active here.
 GREENHOUSE_COMPANIES = {
-    # "Freshworks": "freshworks",   # Actually on SmartRecruiters: https://careers.smartrecruiters.com/Freshworks — not integrated (no SmartRecruiters scraper built)
+    "Razorpay": "razorpaysoftwareprivatelimited",  # confirmed live 2026-08-13 — 22 postings
     # "Chargebee": "chargebee",     # Not on accessible ATS
-    # "BrowserStack": "browserstack",  # Not on accessible ATS
     # "Postman": "postmanapp",      # Not on accessible ATS
-    # "CleverTap": "clevertap",     # Not on accessible ATS
+    # "CleverTap": "clevertap",     # Confirmed on Darwinbox: https://clevertap.darwinbox.in/ms/candidate/careers/{job_id} — not integrated (no Darwinbox scraper built)
     # "Darwinbox": "darwinbox",     # Not on accessible ATS (no confirmed public jobs feed of their own)
     # "Innovaccer": "innovaccer",   # Not on accessible ATS
     # "CRED": "cred",               # Not on accessible ATS
@@ -67,12 +66,17 @@ LEVER_COMPANIES = {
     # "Perfios": "perfios",         # Not on accessible ATS
 }
 
-# Workday tenants confirmed via a live careers-page probe of every company above.
-# None matched a myworkdayjobs.com signature, so this starts empty. Populate as
-# {"Company Name": {"subdomain": "tenant", "jobsite": "SiteName", "pool": "wd5"}}
-# once a real Workday-hosted company is confirmed — "pool" varies per tenant
-# (wd1/wd3/wd5/...) and must be read off that company's own careers URL.
-WORKDAY_COMPANIES = {}
+# Workday tenants confirmed via a live careers-page probe. "pool" is the tenant's
+# pod number (wd1/wd3/wd5/...) — differs per company, read off their careers URL.
+WORKDAY_COMPANIES = {
+    "BrowserStack": {"subdomain": "browserstack", "jobsite": "External", "pool": "wd3"},  # confirmed live 2026-08-13 — 35 postings
+}
+
+# SmartRecruiters companies confirmed via a live careers-page probe. Identifier
+# is SmartRecruiters' own company slug (case-sensitive, as it appears in their URL).
+SMARTRECRUITERS_COMPANIES = {
+    "Freshworks": "Freshworks",  # confirmed live 2026-08-13 — https://careers.smartrecruiters.com/Freshworks
+}
 
 TITLE_INCLUDE_KEYWORDS = [
     "product manager",
@@ -246,6 +250,58 @@ def fetch_lever_jobs(company, slug):
     return matched
 
 
+def fetch_smartrecruiters_jobs(company, identifier):
+    url = f"https://api.smartrecruiters.com/v1/companies/{identifier}/postings?limit=100"
+    try:
+        resp = requests.get(url, timeout=config.REQUEST_TIMEOUT_SECONDS)
+    except requests.RequestException:
+        print(f"[Careers] {company} | ATS not reachable, skipping")
+        return []
+
+    if resp.status_code != 200:
+        print(f"[Careers] {company} | ATS not reachable, skipping")
+        return []
+
+    try:
+        data = resp.json()
+    except ValueError:
+        print(f"[Careers] {company} | ATS not reachable, skipping")
+        return []
+
+    postings = data.get("content", [])
+    matched = []
+
+    for job in postings:
+        title = job.get("name") or ""
+        if not matches_title(title):
+            continue
+
+        posted_date = None
+        released_date = job.get("releasedDate")
+        if released_date:
+            try:
+                posted_date = datetime.fromisoformat(released_date.replace("Z", "+00:00"))
+            except ValueError:
+                posted_date = None
+        if not is_recently_posted(posted_date):
+            continue
+
+        job_id = job.get("id")
+        record = build_job(
+            company=company,
+            title=title,
+            location=(job.get("location") or {}).get("city", "India"),
+            url=f"https://jobs.smartrecruiters.com/{identifier}/{job_id}",
+            posted_date=posted_date,
+            external_id=job_id,
+            source_platform="smartrecruiters",
+        )
+        matched.append(record)
+
+    print(f"[Careers] {company} | smartrecruiters | {len(postings)} total | {len(matched)} matched")
+    return matched
+
+
 def parse_workday_posted_on(text):
     """Workday's `postedOn` is relative text ("Posted Today", "Posted 5 Days Ago",
     "Posted 30+ Days Ago"), not an ISO timestamp — approximate a UTC datetime from it.
@@ -337,6 +393,14 @@ def scrape_careers_pm_jobs():
 
         for company, slug in LEVER_COMPANIES.items():
             for record in fetch_lever_jobs(company, slug):
+                if record["comment_id"] in known_ids:
+                    continue
+                database.save_job(conn, record)
+                known_ids.add(record["comment_id"])
+                matches.append(record)
+
+        for company, identifier in SMARTRECRUITERS_COMPANIES.items():
+            for record in fetch_smartrecruiters_jobs(company, identifier):
                 if record["comment_id"] in known_ids:
                     continue
                 database.save_job(conn, record)
