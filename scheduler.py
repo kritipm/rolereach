@@ -12,6 +12,7 @@ import config
 PIPELINE_STEPS = [
     "main.py",
     "scraper_cutshort.py",
+    "scraper_careers.py",
     "scraper_google_jobs.py",
     "scraper_jsearch.py",
     "scraper_internshala.py",
