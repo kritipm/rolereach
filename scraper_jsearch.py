@@ -30,7 +30,7 @@ def fetch_jobs_for_query(query):
         "page": "1",
         "num_pages": "1",
         "country": "in",
-        "date_posted": "today",
+        "date_posted": "3days",
     }
     resp = requests.get(
         JSEARCH_URL,
