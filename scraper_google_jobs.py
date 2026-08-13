@@ -54,7 +54,7 @@ def is_excluded_company(company_name):
 
 def is_recently_posted(posted_at_str):
     if not posted_at_str:
-        return False
+        return True
     lowered = posted_at_str.lower().strip()
     if any(x in lowered for x in ("hour", "today", "just now", "minute")):
         return True
