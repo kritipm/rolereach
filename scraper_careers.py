@@ -16,7 +16,7 @@ GREENHOUSE_COMPANIES = {
     "Razorpay": "razorpaysoftwareprivatelimited",  # confirmed live 2026-08-13 — 22 postings
     # "Chargebee": "chargebee",     # Not on accessible ATS
     # "Postman": "postmanapp",      # Not on accessible ATS
-    # "CleverTap": "clevertap",     # Confirmed on Darwinbox: https://clevertap.darwinbox.in/ms/candidate/careers/{job_id} — not integrated (no Darwinbox scraper built)
+    # "CleverTap": "clevertap",     # Darwinbox SPA - requires headless browser, skipping
     # "Darwinbox": "darwinbox",     # Not on accessible ATS (no confirmed public jobs feed of their own)
     # "Innovaccer": "innovaccer",   # Not on accessible ATS
     # "CRED": "cred",               # Not on accessible ATS
