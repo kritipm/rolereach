@@ -955,7 +955,7 @@ async function loadJobs() {
   }
 
   const isThisWeek = (j) => {
-    if (!j.posted_at) return true;
+    if (!j.posted_at) return false;
     const raw = j.posted_at.toLowerCase().trim();
     const hoursMatch = raw.match(/(\d+)\s+hour/);
     if (hoursMatch) return true;
@@ -977,7 +977,7 @@ async function loadJobs() {
     return false;
   };
 
-  const freshFilter = (j) => currentTime === "Fresh" ? isToday(j) : isThisWeek(j);
+  const freshFilter = (j) => isThisWeek(j);
 
   const todayWithEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && j.hm_email);
   const todayNoEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && !j.hm_email && j.group === "no_contact");
@@ -986,10 +986,10 @@ async function loadJobs() {
   const review = jobs.filter(j => j.group === "review" && j.status === "NEW");
   const alreadyActioned = jobs.filter(j => j.status !== "NEW");
 
-  const showFresh = currentTime === "All" || currentTime === "Fresh" || currentTime === "Week";
-  const showEarlier = currentTime === "All" || currentTime === "Earlier";
+  const showFresh = currentTime !== "Earlier";
+  const showEarlier = currentTime !== "Fresh" && currentTime !== "Week";
 
-  const freshLabel = currentTime === "Fresh" ? "Today only" : "Past week";
+  const freshLabel = "Past week";
 
   container.innerHTML =
     (showFresh && todayWithEmail.length ? `<div class="section-block today-email">${sectionHtml("today_email", "Today — With Email", freshLabel + " · draft ready to send", todayWithEmail, "act-now")}</div>` : "") +
