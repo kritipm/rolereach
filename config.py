@@ -144,6 +144,8 @@ CUTSHORT_FOREIGN_LOCATION_MARKERS = [
 # fetched through a real (or headless-rendered) browser, so requests go through
 # ScraperAPI with render=true, which is sufficient to pass its bot guard.
 SCRAPERAPI_KEY = os.environ.get("SCRAPERAPI_KEY")
+SCRAPERAPI_KEY_2 = os.environ.get("SCRAPERAPI_KEY_2", "")
+SCRAPERAPI_KEY_3 = os.environ.get("SCRAPERAPI_KEY_3", "")
 SCRAPERAPI_BASE_URL = "http://api.scraperapi.com"
 
 IIMJOBS_CATEGORY_URL = "https://www.iimjobs.com/k/it-product-management-jobs"

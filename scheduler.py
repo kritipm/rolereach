@@ -72,6 +72,7 @@ def run_pipeline():
     if datetime.now().weekday() in [0, 2, 4]:  # Mon, Wed, Fri
         run_step("scraper_iimjobs.py")
         run_step("scraper_yc.py")
+        run_step("scraper_careers.py")
 
     sync_db_to_railway()
 
