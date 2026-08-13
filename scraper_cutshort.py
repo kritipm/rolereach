@@ -105,7 +105,7 @@ def format_experience_range(exp_range):
     return f"{min_years}-{max_years} years"
 
 
-def is_recently_posted_iso(iso_str, hours=168):
+def is_recently_posted_iso(iso_str, hours=72):
     """True if iso_str is within the last `hours` hours. Unknown date = include."""
     if not iso_str:
         return True

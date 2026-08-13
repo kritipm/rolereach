@@ -53,18 +53,17 @@ def is_excluded_company(company_name):
 
 
 def is_recently_posted(posted_at_str):
-    """True if posted within the last 48 hours. Unknown date = include."""
     if not posted_at_str:
-        return True
+        return False
     lowered = posted_at_str.lower().strip()
     if any(x in lowered for x in ("hour", "today", "just now", "minute")):
         return True
+    if "month" in lowered or "week" in lowered:
+        return False
     match = re.search(r'(\d+)\s+day', lowered)
     if match:
-        return int(match.group(1)) <= 7
-    if any(x in lowered for x in ("week", "month", "30+")):
-        return False
-    return True
+        return int(match.group(1)) <= 14
+    return False
 
 
 def job_id_to_int(job_id):
