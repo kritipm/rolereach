@@ -48,6 +48,16 @@ def fetch_jobs_for_query(query):
 
     print(f"[JSearch] data type: {type(jobs_data).__name__}, length/keys: {len(jobs_data) if isinstance(jobs_data, list) else list(jobs_data.keys())[:5] if isinstance(jobs_data, dict) else 'unknown'}")
 
+    import json
+    jobs_list = jobs_data.get("jobs", []) if isinstance(jobs_data, dict) else (jobs_data if isinstance(jobs_data, list) else [])
+    print(f"[JSearch DEBUG] Jobs in response: {len(jobs_list)}")
+    if jobs_list:
+        print(f"[JSearch DEBUG] First job keys: {list(jobs_list[0].keys())[:10]}")
+        print(f"[JSearch DEBUG] First job sample: {json.dumps(jobs_list[0], indent=2)[:500]}")
+    else:
+        print(f"[JSearch DEBUG] Empty jobs list. Full data keys: {list(jobs_data.keys()) if isinstance(jobs_data, dict) else 'data is a ' + type(jobs_data).__name__}")
+        print(f"[JSearch DEBUG] Cursor: {jobs_data.get('cursor') if isinstance(jobs_data, dict) else None}")
+
     if isinstance(jobs_data, list):
         return [j for j in jobs_data if isinstance(j, dict)]
     elif isinstance(jobs_data, dict):
