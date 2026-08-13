@@ -1,4 +1,5 @@
 import hashlib
+import re
 from datetime import datetime, timezone, timedelta
 
 import requests
@@ -7,13 +8,71 @@ import config
 import database
 import fix_company_names
 
+# --- Slug-hunt results (see check_ats_slugs.py + live careers-page probe) ---
+# Every company below was checked against Greenhouse, Lever, and (via its public
+# careers page) Workday / Darwinbox / SmartRecruiters / Freshteam signatures.
+# Only the two already confirmed live on Lever remain active here.
 GREENHOUSE_COMPANIES = {
-    "Freshworks": "freshworks", "Chargebee": "chargebee", "BrowserStack": "browserstack", "Postman": "postmanapp", "CleverTap": "clevertap", "Darwinbox": "darwinbox", "Innovaccer": "innovaccer", "CRED": "cred", "Smallcase": "smallcase", "WebEngage": "webengage", "Wingify": "wingify", "Whatfix": "whatfix", "LeadSquared": "leadsquared", "HackerEarth": "hackerearth", "Unacademy": "unacademy", "Scaler": "scaler", "Classplus": "classplus", "Practo": "practo", "Delhivery": "delhivery", "Shiprocket": "shiprocket", "Porter": "porter", "upGrad": "upgrad", "MoEngage": "moengage", "Netcore Cloud": "netcore", "Pristyn Care": "pristyncare", "Exotel": "exotel"
+    # "Freshworks": "freshworks",   # Actually on SmartRecruiters: https://careers.smartrecruiters.com/Freshworks — not integrated (no SmartRecruiters scraper built)
+    # "Chargebee": "chargebee",     # Not on accessible ATS
+    # "BrowserStack": "browserstack",  # Not on accessible ATS
+    # "Postman": "postmanapp",      # Not on accessible ATS
+    # "CleverTap": "clevertap",     # Not on accessible ATS
+    # "Darwinbox": "darwinbox",     # Not on accessible ATS (no confirmed public jobs feed of their own)
+    # "Innovaccer": "innovaccer",   # Not on accessible ATS
+    # "CRED": "cred",               # Not on accessible ATS
+    # "Smallcase": "smallcase",     # On PyjamaHR (app.pyjamahr.com) — not one of the checked platforms, not integrated
+    # "WebEngage": "webengage",     # Not on accessible ATS
+    # "Wingify": "wingify",         # Not on accessible ATS
+    # "Whatfix": "whatfix",         # Not on accessible ATS
+    # "LeadSquared": "leadsquared", # Not on accessible ATS
+    # "HackerEarth": "hackerearth", # Not on accessible ATS
+    # "Unacademy": "unacademy",     # Not on accessible ATS (careers subdomain redirects to a Wellfound listing, not a feed)
+    # "Scaler": "scaler",           # Not on accessible ATS
+    # "Classplus": "classplus",     # Not on accessible ATS (careers domain unreachable)
+    # "Practo": "practo",           # On Param.ai (practo.app.param.ai) — not one of the checked platforms, not integrated
+    # "Delhivery": "delhivery",     # Not on accessible ATS
+    # "Shiprocket": "shiprocket",   # Not on accessible ATS
+    # "Porter": "porter",           # Confirmed on Darwinbox: https://porter.darwinbox.in/ms/candidate/careers — not integrated (no Darwinbox scraper built)
+    # "upGrad": "upgrad",           # Not on accessible ATS
+    # "MoEngage": "moengage",       # Not on accessible ATS
+    # "Netcore Cloud": "netcore",   # Not on accessible ATS
+    # "Pristyn Care": "pristyncare",  # Not on accessible ATS
+    # "Exotel": "exotel",           # Not on accessible ATS
 }
 
 LEVER_COMPANIES = {
-    "Razorpay": "razorpay", "Groww": "groww", "Meesho": "meesho", "Urban Company": "urbancompany", "Swiggy": "swiggy", "Zomato": "zomato", "Rapido": "rapido", "Jupiter": "jupiter-1", "Setu": "setu", "ShareChat": "sharechat", "Pocket FM": "pocketfm", "Kuku FM": "kukufm", "Inshorts": "inshorts", "Physics Wallah": "physicswallah", "BharatPe": "bharatpe", "Juspay": "juspay", "Nykaa": "nykaa", "KreditBee": "kreditbee", "PhonePe": "phonepe", "Niyo": "niyo", "Slice": "sliceit", "Lenskart": "lenskart", "Perfios": "perfios"
+    "Meesho": "meesho",
+    "Pocket FM": "pocketfm",
+    # "Razorpay": "razorpay",       # Not on accessible ATS
+    # "Groww": "groww",             # Not on accessible ATS
+    # "Urban Company": "urbancompany",  # Not on accessible ATS (custom careers page)
+    # "Swiggy": "swiggy",           # Not on accessible ATS (custom careers page)
+    # "Zomato": "zomato",           # Not on accessible ATS (redirects to eternal.com/careers, custom page)
+    # "Rapido": "rapido",           # Not on accessible ATS
+    # "Jupiter": "jupiter-1",       # Not on accessible ATS
+    # "Setu": "setu",               # Not on accessible ATS
+    # "ShareChat": "sharechat",     # Not on accessible ATS
+    # "Kuku FM": "kukufm",          # Not on accessible ATS
+    # "Inshorts": "inshorts",       # Not on accessible ATS
+    # "Physics Wallah": "physicswallah",  # Not on accessible ATS
+    # "BharatPe": "bharatpe",       # Not on accessible ATS
+    # "Juspay": "juspay",           # Not on accessible ATS
+    # "Nykaa": "nykaa",             # Not on accessible ATS
+    # "KreditBee": "kreditbee",     # Not on accessible ATS
+    # "PhonePe": "phonepe",         # Not on accessible ATS
+    # "Niyo": "niyo",               # Not on accessible ATS
+    # "Slice": "sliceit",           # Not on accessible ATS
+    # "Lenskart": "lenskart",       # On ainterviews.com (job_board/lenskart_ho) — not one of the checked platforms, not integrated
+    # "Perfios": "perfios",         # Not on accessible ATS
 }
+
+# Workday tenants confirmed via a live careers-page probe of every company above.
+# None matched a myworkdayjobs.com signature, so this starts empty. Populate as
+# {"Company Name": {"subdomain": "tenant", "jobsite": "SiteName", "pool": "wd5"}}
+# once a real Workday-hosted company is confirmed — "pool" varies per tenant
+# (wd1/wd3/wd5/...) and must be read off that company's own careers URL.
+WORKDAY_COMPANIES = {}
 
 TITLE_INCLUDE_KEYWORDS = [
     "product manager",
@@ -187,6 +246,77 @@ def fetch_lever_jobs(company, slug):
     return matched
 
 
+def parse_workday_posted_on(text):
+    """Workday's `postedOn` is relative text ("Posted Today", "Posted 5 Days Ago",
+    "Posted 30+ Days Ago"), not an ISO timestamp — approximate a UTC datetime from it.
+    Unparseable/missing text = None (treated as "unknown date = include" downstream)."""
+    if not text:
+        return None
+    lowered = text.lower()
+    if "today" in lowered:
+        return datetime.now(timezone.utc)
+    if "yesterday" in lowered:
+        return datetime.now(timezone.utc) - timedelta(days=1)
+    match = re.search(r"(\d+)\+?\s*day", lowered)
+    if match:
+        return datetime.now(timezone.utc) - timedelta(days=int(match.group(1)))
+    return None
+
+
+def fetch_workday_jobs(company, subdomain, jobsite, pool="wd5"):
+    """Workday's public CXS endpoint requires POST (a plain GET 400s/401s), with a
+    body of {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""} —
+    confirmed against a live Workday tenant. `pool` is the tenant's pod number
+    (wd1/wd3/wd5/...), which differs per company and isn't guessable from the name."""
+    url = f"https://{subdomain}.{pool}.myworkdayjobs.com/wday/cxs/{subdomain}/{jobsite}/jobs"
+    payload = {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": ""}
+
+    try:
+        resp = requests.post(url, json=payload, timeout=config.REQUEST_TIMEOUT_SECONDS)
+    except requests.RequestException:
+        print(f"[Careers] {company} | ATS not reachable, skipping")
+        return []
+
+    if resp.status_code != 200:
+        print(f"[Careers] {company} | ATS not reachable, skipping")
+        return []
+
+    try:
+        data = resp.json()
+    except ValueError:
+        print(f"[Careers] {company} | ATS not reachable, skipping")
+        return []
+
+    postings = data.get("jobPostings", [])
+    matched = []
+
+    for job in postings:
+        title = job.get("title") or ""
+        if not matches_title(title):
+            continue
+
+        posted_date = parse_workday_posted_on(job.get("postedOn"))
+        if not is_recently_posted(posted_date):
+            continue
+
+        # externalPath already begins with "/job/..." — the browsable URL is the
+        # jobsite root plus that path, not "/job/" + externalPath (would double up).
+        external_path = job.get("externalPath") or ""
+        record = build_job(
+            company=company,
+            title=title,
+            location=job.get("locationsText") or "India",
+            url=f"https://{subdomain}.{pool}.myworkdayjobs.com/{jobsite}{external_path}",
+            posted_date=posted_date,
+            external_id=external_path or title,
+            source_platform="workday",
+        )
+        matched.append(record)
+
+    print(f"[Careers] {company} | workday | {len(postings)} total | {len(matched)} matched")
+    return matched
+
+
 def scrape_careers_pm_jobs():
     matches = []
     with database.get_connection() as conn:
@@ -207,6 +337,20 @@ def scrape_careers_pm_jobs():
 
         for company, slug in LEVER_COMPANIES.items():
             for record in fetch_lever_jobs(company, slug):
+                if record["comment_id"] in known_ids:
+                    continue
+                database.save_job(conn, record)
+                known_ids.add(record["comment_id"])
+                matches.append(record)
+
+        for company, workday_info in WORKDAY_COMPANIES.items():
+            jobs = fetch_workday_jobs(
+                company,
+                subdomain=workday_info["subdomain"],
+                jobsite=workday_info["jobsite"],
+                pool=workday_info.get("pool", "wd5"),
+            )
+            for record in jobs:
                 if record["comment_id"] in known_ids:
                     continue
                 database.save_job(conn, record)
