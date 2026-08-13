@@ -636,9 +636,9 @@ DASHBOARD_HTML = r"""
       <div class="dropdown-wrap">
         <select id="time-select" onchange="currentTime = this.value; loadJobs()">
           <option value="All">🕐 All Time</option>
-          <option value="Fresh">New (Today)</option>
           <option value="Week">Past Week</option>
-          <option value="Earlier">Older</option>
+          <option value="Fresh">Today Only</option>
+          <option value="Earlier">Earlier</option>
         </select>
       </div>
     </div>
@@ -977,7 +977,7 @@ async function loadJobs() {
     return false;
   };
 
-  const freshFilter = (j) => isThisWeek(j);
+  const freshFilter = (j) => currentTime === "Fresh" ? isToday(j) : isThisWeek(j);
 
   const todayWithEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && j.hm_email);
   const todayNoEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && !j.hm_email && j.group === "no_contact");
