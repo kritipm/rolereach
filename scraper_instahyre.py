@@ -125,16 +125,27 @@ def build_job(job, posted_date):
     }
 
 
-def fetch_instahyre_jobs():
-    # skills=Product Manager is Instahyre's own skill-tag filter, confirmed live to
-    # return PM-titled roles; 35 is a hard server-side page cap (a larger `limit`
-    # is silently ignored) so this is a single-page fetch, no pagination.
+# Targeted skill-tag queries, replacing the broad "Product Manager" search. Each is
+# Instahyre's own skill-tag filter, confirmed live — note "APM" alone is a loose
+# match (also returns unrelated titles like "Solution Architect", presumably via
+# other skill tags containing "APM"), but matches_title() downstream still filters
+# those out, so it's harmless to include as-is.
+SKILL_QUERIES = [
+    "Associate Product Manager",
+    "APM",
+    "Product Analyst",
+]
+
+
+def fetch_instahyre_jobs(skill_query):
+    # 35 is a hard server-side page cap (a larger `limit` is silently ignored) so
+    # this is a single-page fetch per query, no pagination.
     params = {
         "company_size": 0,
         "job_type": 0,
         "offset": 0,
         "source": "opportunities",
-        "skills": "Product Manager",
+        "skills": skill_query,
     }
     try:
         resp = requests.get(
@@ -144,17 +155,17 @@ def fetch_instahyre_jobs():
             timeout=config.REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as e:
-        print(f"[Instahyre] request failed: {e}")
+        print(f"[Instahyre] query {skill_query!r} request failed: {e}")
         return []
 
     if resp.status_code != 200:
-        print(f"[Instahyre] non-200 status: {resp.status_code}")
+        print(f"[Instahyre] query {skill_query!r} non-200 status: {resp.status_code}")
         return []
 
     try:
         data = resp.json()
     except ValueError:
-        print("[Instahyre] invalid JSON response")
+        print(f"[Instahyre] query {skill_query!r} invalid JSON response")
         return []
 
     return data.get("objects", [])
@@ -162,10 +173,22 @@ def fetch_instahyre_jobs():
 
 def scrape_instahyre_pm_jobs():
     matches = []
-    jobs = fetch_instahyre_jobs()
+    total_fetched = 0
+    seen_job_ids = set()
+    deduped_jobs = []
+
+    for skill_query in SKILL_QUERIES:
+        jobs = fetch_instahyre_jobs(skill_query)
+        total_fetched += len(jobs)
+        for job in jobs:
+            job_id = job.get("id")
+            if job_id in seen_job_ids:
+                continue
+            seen_job_ids.add(job_id)
+            deduped_jobs.append(job)
 
     with database.get_connection() as conn:
-        for job in jobs:
+        for job in deduped_jobs:
             title = job.get("title") or ""
             if not matches_title(title):
                 continue
@@ -186,7 +209,7 @@ def scrape_instahyre_pm_jobs():
 
         conn.commit()
 
-    print(f"[Instahyre] {len(jobs)} total | {len(matches)} matched")
+    print(f"[Instahyre] {total_fetched} total | {len(matches)} matched")
     return matches
 
 
