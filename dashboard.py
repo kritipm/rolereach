@@ -1088,7 +1088,7 @@ function linkedInSearchUrl(company) {
 }
 
 function dmTemplate(job) {
-  return `Hi [Name], saw the ${job.title || "role"} opening at ${job.company || "your company"}. I've shipped live PM products — portfolio here: https://kriti-portfolio-pm.vercel.app/ — happy to connect if there's a fit. — Kriti`;
+  return `Hi [Name], came across the ${job.title || "role"} opening at ${job.company || "your company"} and wanted to reach out directly. Two internships — one at a scaled product org, one at an early-stage startup — and three products shipped independently since, all live, all documented. Worth a look at the work: https://kriti-portfolio-pm.vercel.app/ Would love your feedback on the work or any nudge in the right direction if there's a fit. — Kriti`;
 }
 
 function copyDM(jobId, btn) {
