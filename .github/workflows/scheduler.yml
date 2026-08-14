@@ -35,4 +35,5 @@ jobs:
           SERPAPI_KEY_2: ${{ secrets.SERPAPI_KEY_2 }}
           JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PORTFOLIO_URL: ${{ secrets.PORTFOLIO_URL }}
         run: python scheduler.py --now

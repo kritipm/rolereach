@@ -10,21 +10,14 @@ import database
 load_dotenv()
 
 PORTFOLIO_URL = os.environ.get("PORTFOLIO_URL", "")
+print(f"[drafter_claude] PORTFOLIO_URL loaded as: {PORTFOLIO_URL!r}")
+if not PORTFOLIO_URL:
+    print("[drafter_claude] WARNING: PORTFOLIO_URL is empty — emails will have a blank Portfolio line. "
+          "Check it's set in .env locally, and in the workflow's env: block / GitHub secrets in CI.")
 
-EMAIL_TEMPLATE = """Subject: Built and Shipped. Applying for APM.
-
-Hi {first_name},
-
-I'm a PM with a UI/UX background — shipped live AI-integrated products independently, owned B2B and B2C funnels end to end across two internships.
-
-I've been looking closely at {company}. {observation}
-
-That's the kind of problem I work on. Find what's broken, build the fix, prove it moved.
-
-Portfolio: {portfolio_url}
-CV attached.
-Happy to connect if there's a fit.
-Kriti"""
+INTRO_LINE = ("I'm a PM with a UI/UX background — shipped live AI-integrated products independently, "
+              "owned B2B and B2C funnels end to end across two internships.")
+CLOSING_LINE = "That's the kind of problem I work on. Find what's broken, build the fix, prove it moved."
 
 FALLBACK_OBSERVATION = "[Could not automatically fetch a company description — add your own observation here]"
 
@@ -50,8 +43,43 @@ FRICTION_KEYWORD_MAP = [
 DEFAULT_FRICTION = "turning early interest into habitual, everyday usage"
 
 
+DESCRIPTION_MAX_CHARS = 100
+
+# Prefixes that mean the scraped text is marketing chrome (a hero tagline, a "Why
+# choose us" section, an "About us" banner) rather than an actual description of
+# what the company does. Checked case-insensitively against the start of the text.
+MARKETING_FLUFF_PREFIXES = [
+    "why choose",
+    "why settle",
+    "about us",
+    "we are",
+    "welcome to",
+    "discover",
+    "join thousands",
+    "trusted by",
+    "unlock",
+    "the #1",
+]
+
+
+def clean_company_description(text):
+    """Truncate raw scraped description text to DESCRIPTION_MAX_CHARS, and drop it
+    entirely (return None) if it looks like marketing copy rather than an actual
+    description — better to omit the observation sentence than insert garbage."""
+    if not text:
+        return None
+
+    cleaned = text.strip()
+    lowered = cleaned.lower()
+    if any(lowered.startswith(prefix) for prefix in MARKETING_FLUFF_PREFIXES):
+        return None
+
+    truncated = cleaned[:DESCRIPTION_MAX_CHARS].strip()
+    return truncated or None
+
+
 def fetch_company_description(company_url):
-    """Fetch the company's homepage and return raw candidate description text
+    """Fetch the company's homepage and return a cleaned candidate description
     (meta description, og:description, or first substantial paragraph)."""
     if not company_url:
         return None
@@ -64,20 +92,24 @@ def fetch_company_description(company_url):
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
+    raw = None
     meta_desc = soup.find("meta", attrs={"name": "description"})
     if meta_desc and meta_desc.get("content"):
-        return meta_desc["content"]
+        raw = meta_desc["content"]
 
-    og_desc = soup.find("meta", attrs={"property": "og:description"})
-    if og_desc and og_desc.get("content"):
-        return og_desc["content"]
+    if not raw:
+        og_desc = soup.find("meta", attrs={"property": "og:description"})
+        if og_desc and og_desc.get("content"):
+            raw = og_desc["content"]
 
-    for p in soup.find_all("p"):
-        text = p.get_text(strip=True)
-        if len(text) > 40:
-            return text
+    if not raw:
+        for p in soup.find_all("p"):
+            text = p.get_text(strip=True)
+            if len(text) > 40:
+                raw = text
+                break
 
-    return None
+    return clean_company_description(raw)
 
 
 def summarize_what_they_do(company, text):
@@ -129,12 +161,23 @@ def build_observation(company, raw_description):
 
 def build_email(hm_name, company, observation):
     first_name = (hm_name or "").split()[0] if hm_name else "there"
-    return EMAIL_TEMPLATE.format(
-        first_name=first_name,
-        company=company,
-        observation=observation,
-        portfolio_url=PORTFOLIO_URL,
-    )
+
+    blocks = [
+        "Subject: Built and Shipped. Applying for APM.",
+        f"Hi {first_name},",
+        INTRO_LINE,
+    ]
+
+    # Only include the "I've been looking closely..." sentence when there's an
+    # actual usable observation — never send the bracketed fallback placeholder
+    # text itself, drop the whole sentence instead.
+    if observation and observation != FALLBACK_OBSERVATION:
+        blocks.append(f"I've been looking closely at {company}. {observation}")
+
+    blocks.append(CLOSING_LINE)
+    blocks.append(f"Portfolio: {PORTFOLIO_URL}\nCV attached.\nHappy to connect if there's a fit.\nKriti")
+
+    return "\n\n".join(blocks)
 
 
 def draft_emails():
