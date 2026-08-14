@@ -791,6 +791,13 @@ function jobRowHtml(job, isEarlier = false) {
     }
   }
 
+  // Shown on every card regardless of hm_email/draft state.
+  const linkedInUrl = escapeHtml(linkedInSearchUrl(job.company));
+  const outreachButtons = `<div style="display:flex; flex-direction:column; gap:6px; margin-top:10px;">
+    <a href="${linkedInUrl}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="background:rgba(10,102,194,0.15); border-color:#0A66C2; color:#4D9FFF; text-decoration:none; text-align:center;">&#128269; Find on LinkedIn</a>
+    <button class="copy-btn" style="background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyDM('${job.job_id}', this)">Copy DM</button>
+  </div>`;
+
   const draftHtml = job.email_draft ? (() => {
     const lines = job.email_draft.split('\n');
     const subjectLine = lines.find(l => l.startsWith('Subject:')) || 'Subject: Built and Shipped. Applying for APM.';
@@ -868,6 +875,7 @@ function jobRowHtml(job, isEarlier = false) {
       <span class="location-pill">&#128205; ${escapeHtml(job.location)}</span>
       <span class="job-bottom-right">${contactChip}</span>
     </div>
+    ${outreachButtons}
     ${draftHtml}${urlPanel}
   </div>`;
 }
@@ -1071,6 +1079,38 @@ function copyEmail(email, btn) {
     document.body.removeChild(ta);
     btn.innerHTML = "&#10003;";
     setTimeout(() => { btn.innerHTML = "&#10697;"; }, 1500);
+  });
+}
+
+function linkedInSearchUrl(company) {
+  const keywords = encodeURIComponent(company || "") + "+product";
+  return `https://www.linkedin.com/search/results/people/?keywords=${keywords}&origin=GLOBAL_SEARCH_HEADER`;
+}
+
+function dmTemplate(job) {
+  return `Hi [Name], saw the ${job.title || "role"} opening at ${job.company || "your company"}. I've shipped live PM products — portfolio here: https://kriti-portfolio-pm.vercel.app/ — happy to connect if there's a fit. — Kriti`;
+}
+
+function copyDM(jobId, btn) {
+  const job = (cachedJobs || []).find(j => String(j.job_id) === String(jobId));
+  if (!job) return;
+
+  const text = dmTemplate(job);
+  const originalLabel = btn.textContent;
+
+  const onCopied = () => {
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = originalLabel; }, 2000);
+  };
+
+  navigator.clipboard.writeText(text).then(onCopied).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    onCopied();
   });
 }
 
