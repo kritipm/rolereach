@@ -63,6 +63,44 @@ def to_comment_id(external_id):
     return int.from_bytes(hashlib.sha256(raw.encode()).digest()[:8], "big") & 0x7FFFFFFFFFFFFFFF
 
 
+# Instahyre's results skew more senior/generic than the curated ATS lists in
+# scraper_careers.py, so this is a second, stricter pass on top of matches_title()'s
+# shared TITLE_EXCLUDE_KEYWORDS — deliberately kept local to this file rather than
+# added to scraper_careers.py, so it doesn't change filtering for the other scrapers.
+SENIORITY_EXCLUDE_KEYWORDS = [
+    "senior",
+    "sr.",
+    "lead",
+    "head",
+    "director",
+    "vp",
+    "principal",
+]
+
+# Rough experience-in-title/experience_range text filter. Checked against
+# "X+ years" phrasing specifically (not bare "5+"), since Instahyre titles that
+# state a number at all almost always spell out "years" right after it.
+EXPERIENCE_EXCLUDE_PATTERNS = [
+    "5+ years",
+    "6+ years",
+    "7+ years",
+    "8+ years",
+    "10+ years",
+]
+
+EXPERIENCE_RANGE_LABEL = "0-2 years"
+
+
+def fails_seniority_filter(title):
+    lowered = title.lower()
+    return any(keyword in lowered for keyword in SENIORITY_EXCLUDE_KEYWORDS)
+
+
+def fails_experience_text_filter(title, experience_range):
+    haystack = f"{title} {experience_range or ''}".lower()
+    return any(pattern in haystack for pattern in EXPERIENCE_EXCLUDE_PATTERNS)
+
+
 def build_job(job, posted_date):
     job_id = str(job["id"])
     title = job.get("title") or ""
@@ -82,7 +120,7 @@ def build_job(job, posted_date):
         "verified": False,
         "source": "instahyre",
         "external_id": job_id,
-        "experience_range": "0-2 years",
+        "experience_range": EXPERIENCE_RANGE_LABEL,
         "description": None,
     }
 
@@ -130,6 +168,12 @@ def scrape_instahyre_pm_jobs():
         for job in jobs:
             title = job.get("title") or ""
             if not matches_title(title):
+                continue
+
+            if fails_seniority_filter(title):
+                continue
+
+            if fails_experience_text_filter(title, EXPERIENCE_RANGE_LABEL):
                 continue
 
             posted_date = fetch_posted_date(job.get("public_url"))
