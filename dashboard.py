@@ -5,7 +5,7 @@ from flask import Flask, jsonify, request
 
 import config
 import database
-import telegram_bot
+import experience_filter
 
 app = Flask(__name__)
 
@@ -25,6 +25,48 @@ WEEKLY_GOAL_TARGET = 10
 
 
 # ---------- Shared helpers ----------
+# get_title/get_location/get_experience/get_job_tier are inlined from telegram_bot.py
+# rather than imported — importing that module pulls in a top-level
+# os.environ["TELEGRAM_BOT_TOKEN"]/["TELEGRAM_CHAT_ID"] read that raises KeyError if
+# unset, which crashed the whole Flask app on startup on Render (render.yaml only
+# declares DATABASE_URL, not the Telegram vars).
+
+
+def get_title(job):
+    if job["source"] == "hackernews":
+        first_line = (job["text"] or "").split("\n", 1)[0]
+        parts = [p.strip() for p in first_line.split("|")]
+        return parts[1] if len(parts) > 1 else (job["matched_keyword"] or "N/A")
+
+    return (job["text"] or "").split("|", 1)[0].strip() or "N/A"
+
+
+def get_location(job):
+    if job["source"] == "hackernews":
+        first_line = (job["text"] or "").split("\n", 1)[0]
+        parts = [p.strip() for p in first_line.split("|")]
+        if len(parts) > 2 and parts[2]:
+            return parts[2]
+        return "Location not specified"
+
+    parts = [p.strip() for p in (job["text"] or "").split("|")]
+    if job["source"] in ("iimjobs", "internshala") and len(parts) >= 3 and parts[2]:
+        return parts[2]
+    if job["source"] == "google_jobs" and len(parts) >= 2 and parts[1]:
+        return parts[1]
+
+    return "Location not specified"
+
+
+def get_experience(job):
+    return job["experience_range"] or "Not specified"
+
+
+def get_job_tier(job):
+    """Tier 1 (0-1yr/fresher/unspecified) sorts before Tier 2 (1-2yr)."""
+    min_years = experience_filter.parse_min_experience(job["experience_range"] or "")
+    combined_text = f"{get_title(job)} {job['experience_range'] or ''} {job.get('description') or ''}"
+    return experience_filter.get_tier(min_years, combined_text) or 99
 
 
 def get_all_jobs_with_meta():
@@ -35,10 +77,10 @@ def get_all_jobs_with_meta():
     actions = database.fetch_all_job_actions()
 
     for job in jobs:
-        job["title"] = telegram_bot.get_title(job)
-        job["location"] = telegram_bot.get_location(job)
-        job["experience"] = telegram_bot.get_experience(job)
-        job["tier"] = telegram_bot.get_job_tier(job)
+        job["title"] = get_title(job)
+        job["location"] = get_location(job)
+        job["experience"] = get_experience(job)
+        job["tier"] = get_job_tier(job)
         job["has_email"] = bool(job.get("hm_email"))
         job["has_linkedin"] = bool(job.get("company_linkedin"))
 
