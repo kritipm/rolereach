@@ -40,6 +40,7 @@ PLACEHOLDER_EMAILS = {
     "your@email.com", "you@example.com", "name@example.com", "email@example.com",
     "test@test.com", "example@example.com", "user@example.com",
     "john@example.com", "jane@example.com", "someone@example.com",
+    "name@email.com", "email@site.com",
 }
 # "firstname.lastname@gmail.com" / "@yahoo.com" is a classic template placeholder
 # pattern (e.g. john.doe@gmail.com) rather than a real scraped contact.
@@ -210,6 +211,46 @@ def is_valid_real_email(email):
     return True
 
 
+# Garbage caught in production: JS/CSS asset paths and Sentry/Wix event ids that
+# EMAIL_PATTERN can still technically match (an "@" preceded/followed by
+# dot-separated segments) but are not real contact emails at all.
+JUNK_DOMAIN_SUFFIXES = (".js", ".css", ".png", ".jpg", ".bundle", ".wixpress.com")
+JUNK_DOMAIN_SUBSTRINGS = ("sentry", "wixpress", "bundle")
+HEX_LOCAL_PART_PATTERN = re.compile(r"^[0-9a-f]+$", re.IGNORECASE)
+HEX_LOCAL_PART_MAX_LEN = 20
+
+
+def is_valid_email(email):
+    """Final gate applied wherever hm_email is actually saved — catches garbage
+    that slips past regex extraction (JS bundle filenames, tracking-id hashes,
+    template placeholders, malformed addresses)."""
+    if not email:
+        return False
+
+    if email.count("@") != 1:
+        return False
+
+    local_part, _, domain_part = email.partition("@")
+    lowered_domain = domain_part.lower()
+
+    if email.lower() in PLACEHOLDER_EMAILS:
+        return False
+
+    if lowered_domain.endswith(JUNK_DOMAIN_SUFFIXES):
+        return False
+
+    if any(marker in lowered_domain for marker in JUNK_DOMAIN_SUBSTRINGS):
+        return False
+
+    if "." not in domain_part:
+        return False
+
+    if len(local_part) > HEX_LOCAL_PART_MAX_LEN and HEX_LOCAL_PART_PATTERN.match(local_part):
+        return False
+
+    return True
+
+
 def scrape_website_email(company_url):
     if not company_url:
         return None
@@ -276,21 +317,29 @@ def search_company_linkedin(company_name):
 
 def enrich_job(job):
     domain = extract_domain(job["company_url"])
+    company_name = derive_company_name(job, domain)
 
     name, email, account_number = find_named_email_rotating(domain)
 
     category = None
     if name and email:
-        database.update_hiring_manager(job["comment_id"], name, email)
-        category = f"snov_account{account_number}"
+        if is_valid_email(email):
+            database.update_hiring_manager(job["comment_id"], name, email)
+            category = f"snov_account{account_number}"
+        else:
+            print(f"[Enricher] {company_name} | invalid email skipped: {email}")
+            database.update_hiring_manager(job["comment_id"], None, None)
     else:
         scraped_email = scrape_website_email(job["company_url"])
         if scraped_email:
-            database.update_hiring_manager(job["comment_id"], None, scraped_email)
-            category = "website_scrape"
+            if is_valid_email(scraped_email):
+                database.update_hiring_manager(job["comment_id"], None, scraped_email)
+                category = "website_scrape"
+            else:
+                print(f"[Enricher] {company_name} | invalid email skipped: {scraped_email}")
+                database.update_hiring_manager(job["comment_id"], None, None)
 
     # LinkedIn is always attempted regardless of whether an email was found.
-    company_name = derive_company_name(job, domain)
     try:
         linkedin_url = search_company_linkedin(company_name)
     except requests.RequestException:
