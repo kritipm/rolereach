@@ -10,8 +10,11 @@ if config.DATABASE_URL:
 
 # Supabase's direct-connection host is IPv6-only and can fail with "Network is
 # unreachable" on IPv4-only networks/runners; the pooler host supports both.
+# The pooler also requires the username in "postgres.<project-ref>" form (plain
+# "postgres" — valid on the direct host — is rejected by the pooler).
 SUPABASE_POOLER_HOST = "aws-0-ap-northeast-1.pooler.supabase.com"
 SUPABASE_POOLER_PORT = 6543
+SUPABASE_POOLER_USERNAME = "postgres.zkrznztjdofityugbuou"
 
 
 class Connection:
@@ -53,7 +56,8 @@ def _connect_postgres(database_url):
         # the URL (urlparse does not decode them) — reuse them as-is rather than
         # re-quoting, which would double-encode any password containing a "%".
         parsed = urllib.parse.urlparse(database_url)
-        fallback_netloc = f"{parsed.username or ''}:{parsed.password or ''}@{SUPABASE_POOLER_HOST}:{SUPABASE_POOLER_PORT}"
+        username = SUPABASE_POOLER_USERNAME if parsed.username == "postgres" else (parsed.username or "")
+        fallback_netloc = f"{username}:{parsed.password or ''}@{SUPABASE_POOLER_HOST}:{SUPABASE_POOLER_PORT}"
         fallback_url = parsed._replace(netloc=fallback_netloc).geturl()
 
         try:
