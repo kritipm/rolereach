@@ -842,7 +842,8 @@ function jobRowHtml(job, isEarlier = false) {
 
   const draftHtml = job.email_draft ? (() => {
     const lines = job.email_draft.split('\n');
-    const subjectLine = lines.find(l => l.startsWith('Subject:')) || 'Subject: Built and Shipped. Applying for APM.';
+    const subjectLine = lines.find(l => l.startsWith('Subject:')) || 'Subject: Diagnosed. Fixed. Shipped. Applying for APM.';
+    const copySubject = cleanSubjectForCopy(subjectLine);
     const bodyLines = lines.filter(l => !l.startsWith('Subject:'));
     const bodyText = bodyLines.join('\n').trim();
 
@@ -856,7 +857,7 @@ function jobRowHtml(job, isEarlier = false) {
       ${urlRow}
       <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
         <span style="font-size:12px; font-weight:700; color:var(--lavender); flex:1;">${escapeHtml(subjectLine)}</span>
-        <button onclick="event.stopPropagation(); copyTextInline('${escapeHtml(subjectLine)}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:2px 6px; flex-shrink:0;" title="Copy subject">&#10697;</button>
+        <button onclick="event.stopPropagation(); copyTextInline('${escapeHtml(copySubject)}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:2px 6px; flex-shrink:0;" title="Copy subject">&#10697;</button>
       </div>
 
       <div style="position:relative;">
@@ -875,7 +876,8 @@ function jobRowHtml(job, isEarlier = false) {
   })() : "";
 
   const urlPanel = !job.email_draft && job.url ? (() => {
-    const subjectLine = "Subject: Built and Shipped. Applying for APM.";
+    const subjectLine = "Subject: Diagnosed. Fixed. Shipped. Applying for APM.";
+    const copySubject = cleanSubjectForCopy(subjectLine);
     const templateBody = `Hi there,\n\nI noticed something specific about ${job.company || "[Company]"}'s product worth paying attention to.\n\nI'm applying for the ${job.title || "[Role]"} role. I come from a design background and have been building in product — activation flows, user reachability, documented tradeoffs. Not just thinking. Actually shipping.\n\nPortfolio: https://kriti-portfolio-pm.vercel.app/\nCV attached.\n\nWarmly,\nKriti`;
     const draftId = "draft-" + job.job_id;
     const subjectId = "draft-subject-" + job.job_id;
@@ -884,7 +886,7 @@ function jobRowHtml(job, isEarlier = false) {
 
       <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
         <span id="${subjectId}" style="font-size:12px; font-weight:700; color:var(--lavender); flex:1;">${escapeHtml(subjectLine)}</span>
-        <button onclick="event.stopPropagation(); copyTextInline('${subjectLine}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:2px 6px; flex-shrink:0;" title="Copy subject">&#10697;</button>
+        <button onclick="event.stopPropagation(); copyTextInline('${escapeHtml(copySubject)}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:14px; padding:2px 6px; flex-shrink:0;" title="Copy subject">&#10697;</button>
       </div>
 
       <div style="position:relative;">
@@ -1068,6 +1070,16 @@ function toggleDraft(jobId) {
   const panel = document.getElementById("draft-panel-" + jobId);
   if (!panel) return;
   panel.classList.add("open");
+}
+
+function cleanSubjectForCopy(subjectLine) {
+  let text = (subjectLine || "").trim();
+  text = text.replace(/^Subject:\s*/i, "").trim();
+  // Defensive: strip a stray trailing colon/semicolon, and collapse a run of
+  // trailing dots (e.g. "APM..") down to the single dot that belongs there.
+  text = text.replace(/[:;]+$/, "").trim();
+  text = text.replace(/\.{2,}$/, ".");
+  return text;
 }
 
 function copyTextInline(text, btn) {
