@@ -3,7 +3,6 @@ import os
 from dotenv import load_dotenv
 
 import database
-import telegram_bot
 
 load_dotenv()
 
@@ -34,6 +33,18 @@ Happy to get on a quick call if anything lands.
 Kriti Kumari"""
 
 
+# Inlined from telegram_bot.py rather than imported — importing that module pulls
+# in a top-level os.environ["TELEGRAM_BOT_TOKEN"]/["TELEGRAM_CHAT_ID"] read that
+# raises KeyError if unset, same issue fixed in dashboard.py in the last commit.
+def get_title(job):
+    if job["source"] == "hackernews":
+        first_line = (job["text"] or "").split("\n", 1)[0]
+        parts = [p.strip() for p in first_line.split("|")]
+        return parts[1] if len(parts) > 1 else (job["matched_keyword"] or "N/A")
+
+    return (job["text"] or "").split("|", 1)[0].strip() or "N/A"
+
+
 def build_email(hm_name, job_title, company_name):
     first_name = (hm_name or "").split()[0] if hm_name else "there"
     body = EMAIL_BODY_TEMPLATE.format(
@@ -51,7 +62,7 @@ def draft_emails():
 
     for job in jobs:
         company = job.get("author") or "your company"
-        job_title = telegram_bot.get_title(job) or "this role"
+        job_title = get_title(job) or "this role"
         draft = build_email(job.get("hm_name"), job_title, company)
         database.update_email_draft(job["comment_id"], draft)
         results.append({"job": job, "draft": draft})
