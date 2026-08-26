@@ -13,22 +13,25 @@ if not PORTFOLIO_URL:
     print("[drafter_claude] WARNING: PORTFOLIO_URL is empty — emails will have a blank Portfolio line. "
           "Check it's set in .env locally, and in the workflow's env: block / GitHub secrets in CI.")
 
-SUBJECT_LINE = "Built and Shipped. Applying for APM."
+SUBJECT_LINE = "Diagnosed. Fixed. Shipped. Applying for APM."
 
 # Fixed, final template — no dynamic company-description generation anymore.
 # Only {hm_name}, {job_title}, {company_name} are substituted per job.
 EMAIL_BODY_TEMPLATE = """Hi {hm_name},
 
-At Oho-Kids I worked on growth strategy for a creator ecosystem with 100K+ users — mapping activation drop-offs, running experiments, feeding insights back into the product. At Times Internet I worked across B2B and B2C products, owning analytics and driving product decisions on live surfaces.
+I've been building things, not just talking about them.
 
-Since then I've taken three products from problem to production independently — an AI-powered reachability tool, an onboarding activation funnel, and an automated pipeline running live in production every morning.
+At Times Internet I owned B2B and B2C funnels end to end. Diagnosed a drop-off no one had named, traced it to a value mismatch, rebuilt onboarding, got a 21% CTR lift. At Oho-Kids I ran growth strategy for a creator platform, flipped a core product assumption from ethnographic research, and built the foundation that drove 100K+ users and 48% first renewal retention by month 8. I wasn't around to see it land. The decisions held.
 
-I came across the {job_title} opening at {company_name} and wanted to reach out directly. The live products, the decisions that shaped them, and the thinking behind each one are in the portfolio and CV attached.
+After that I kept going. Took three products through the full loop independently. Problem to hypothesis, hypothesis to build, build to ship, ship to measure, measure to iterate. All three are live. All decisions documented.
 
+Came across the {job_title} at {company_name} and wanted to reach out directly.
+
+Portfolio and CV say the rest better than I can here:
 {portfolio_url}
 
-Happy to connect on a 15-minute call if there's a fit.
-Kriti"""
+Happy to get on a quick call if anything lands.
+Kriti Kumari"""
 
 
 def build_email(hm_name, job_title, company_name):
