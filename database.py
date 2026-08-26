@@ -1,4 +1,5 @@
 import sqlite3
+import urllib.parse
 from contextlib import contextmanager
 
 import config
@@ -6,6 +7,11 @@ import config
 if config.DATABASE_URL:
     import psycopg2
     import psycopg2.extras
+
+# Supabase's direct-connection host is IPv6-only and can fail with "Network is
+# unreachable" on IPv4-only networks/runners; the pooler host supports both.
+SUPABASE_POOLER_HOST = "aws-0-ap-northeast-1.pooler.supabase.com"
+SUPABASE_POOLER_PORT = 6543
 
 
 class Connection:
@@ -35,10 +41,31 @@ class Connection:
         self._raw.close()
 
 
+def _connect_postgres(database_url):
+    try:
+        return psycopg2.connect(database_url)
+    except psycopg2.OperationalError as original_error:
+        message = str(original_error)
+        if "Network is unreachable" not in message and "could not connect" not in message:
+            raise
+
+        # .username/.password are already percent-encoded substrings straight from
+        # the URL (urlparse does not decode them) — reuse them as-is rather than
+        # re-quoting, which would double-encode any password containing a "%".
+        parsed = urllib.parse.urlparse(database_url)
+        fallback_netloc = f"{parsed.username or ''}:{parsed.password or ''}@{SUPABASE_POOLER_HOST}:{SUPABASE_POOLER_PORT}"
+        fallback_url = parsed._replace(netloc=fallback_netloc).geturl()
+
+        try:
+            return psycopg2.connect(fallback_url)
+        except psycopg2.OperationalError:
+            raise original_error
+
+
 @contextmanager
 def get_connection():
     if config.DATABASE_URL:
-        raw = psycopg2.connect(config.DATABASE_URL)
+        raw = _connect_postgres(config.DATABASE_URL)
         conn = Connection(raw, is_postgres=True)
     else:
         raw = sqlite3.connect(config.DB_PATH)
