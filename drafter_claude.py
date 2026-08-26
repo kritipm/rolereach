@@ -15,8 +15,8 @@ if not PORTFOLIO_URL:
 SUBJECT_LINE = "Diagnosed. Fixed. Shipped. Applying for APM."
 
 # Fixed, final template — no dynamic company-description generation anymore.
-# Only {hm_name}, {job_title}, {company_name} are substituted per job.
-EMAIL_BODY_TEMPLATE = """Hi {hm_name},
+# Only {greeting}, {job_title}, {company_name} are substituted per job.
+EMAIL_BODY_TEMPLATE = """{greeting}
 
 I've been building things, not just talking about them.
 
@@ -46,9 +46,11 @@ def get_title(job):
 
 
 def build_email(hm_name, job_title, company_name):
-    first_name = (hm_name or "").split()[0] if hm_name else "there"
+    name_parts = (hm_name or "").split()
+    first_name = name_parts[0] if name_parts else None
+    greeting = f"Hi {first_name}," if first_name else "Hi,"
     body = EMAIL_BODY_TEMPLATE.format(
-        hm_name=first_name,
+        greeting=greeting,
         job_title=job_title or "this role",
         company_name=company_name or "your company",
         portfolio_url=PORTFOLIO_URL,
