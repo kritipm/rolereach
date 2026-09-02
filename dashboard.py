@@ -826,17 +826,26 @@ function jobRowHtml(job, isEarlier = false) {
     contactChip += `<a href="${escapeHtml(job.company_linkedin)}" target="_blank" class="contact-chip linkedin" onclick="event.stopPropagation()">&#8599; LinkedIn</a>`;
   }
   if (!job.hm_email && !job.company_linkedin) {
-    if (job.url) {
-      contactChip = `<a href="${escapeHtml(job.url)}" target="_blank" class="contact-chip none" style="color:var(--text-muted); text-decoration:none;" onclick="event.stopPropagation()">&#8599; View Posting</a>`;
-    } else {
-      contactChip = '<span class="contact-chip none">No contact</span>';
-    }
+    contactChip = '<span class="contact-chip none">No contact</span>';
   }
 
+  // Independent of contactChip/hm_email/company_linkedin — shows whenever a job
+  // URL exists at all, hidden entirely otherwise. Previously nested inside the
+  // "no hm_email and no company_linkedin" branch, so it silently never rendered
+  // for any job that had a company_linkedin (a very common case, since the
+  // enricher always attempts LinkedIn regardless of whether an email was found).
+  const viewPostingLink = job.url
+    ? `<a href="${escapeHtml(job.url)}" target="_blank" class="contact-chip none" style="color:var(--text-muted); text-decoration:none;" onclick="event.stopPropagation()">&#8599; View Posting</a>`
+    : "";
+
   // Shown on every card regardless of hm_email/draft state.
-  const linkedInUrl = escapeHtml(linkedInSearchUrl(job.company));
+  const jobSearchUrl = escapeHtml(linkedInJobSearchUrl(job.title, job.company));
+  const peopleSearchUrl = escapeHtml(linkedInSearchUrl(job.company));
   const outreachButtons = `<div style="display:flex; flex-direction:column; gap:6px; margin-top:10px;">
-    <a href="${linkedInUrl}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="background:rgba(10,102,194,0.15); border-color:#0A66C2; color:#4D9FFF; text-decoration:none; text-align:center;">&#128269; Find on LinkedIn</a>
+    <div style="display:flex; gap:6px;">
+      <a href="${jobSearchUrl}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="flex:1; background:#0A66C2; border-color:#0A66C2; color:#fff; text-decoration:none; text-align:center;">Job on LinkedIn</a>
+      <a href="${peopleSearchUrl}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="flex:1; background:#0A66C2; border-color:#0A66C2; color:#fff; text-decoration:none; text-align:center;">Product Folks</a>
+    </div>
     <button class="copy-btn" style="background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyDM('${job.job_id}', this)">Copy DM</button>
   </div>`;
 
@@ -917,7 +926,7 @@ function jobRowHtml(job, isEarlier = false) {
     <div class="job-bottom">
       <span class="job-company">${escapeHtml(job.company)}</span>
       <span class="location-pill">&#128205; ${escapeHtml(job.location)}</span>
-      <span class="job-bottom-right">${contactChip}</span>
+      <span class="job-bottom-right">${contactChip}${viewPostingLink}</span>
     </div>
     ${outreachButtons}
     ${draftHtml}${urlPanel}
@@ -1139,6 +1148,11 @@ function copyEmail(email, btn) {
 function linkedInSearchUrl(company) {
   const keywords = encodeURIComponent(company || "") + "+product";
   return `https://www.linkedin.com/search/results/people/?keywords=${keywords}&origin=GLOBAL_SEARCH_HEADER`;
+}
+
+function linkedInJobSearchUrl(jobTitle, company) {
+  const keywords = encodeURIComponent(jobTitle || "") + "+" + encodeURIComponent(company || "");
+  return `https://www.linkedin.com/jobs/search/?keywords=${keywords}&location=India`;
 }
 
 function dmTemplate(job) {
