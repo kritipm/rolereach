@@ -800,11 +800,52 @@ function renderFilterRow() {
   });
 }
 
+// Defensive client-side override on top of the server-computed tier (get_job_tier
+// in Python) — catches an explicit senior-experience requirement that slipped
+// through tier classification. Only job.title and job.experience are available
+// on the client (the API never sends a raw description), so that's what's checked.
+const SENIOR_BADGE_PATTERNS = [
+  { pattern: "3-5", label: "3-5yr" },
+  { pattern: "4-6", label: "3-5yr" },
+  { pattern: "5-7", label: "5+yr" },
+  { pattern: "5-8", label: "5+yr" },
+  { pattern: "6-8", label: "5+yr" },
+  { pattern: "6-9", label: "5+yr" },
+  { pattern: "7-9", label: "5+yr" },
+  { pattern: "7-10", label: "5+yr" },
+  { pattern: "8-10", label: "5+yr" },
+  { pattern: "3+", label: "3-5yr" },
+  { pattern: "4+", label: "3-5yr" },
+  { pattern: "5+", label: "5+yr" },
+  { pattern: "6+", label: "5+yr" },
+  { pattern: "7+", label: "5+yr" },
+  { pattern: "8+", label: "5+yr" },
+  { pattern: "minimum 3", label: "3-5yr" },
+  { pattern: "minimum 4", label: "3-5yr" },
+  { pattern: "minimum 5", label: "5+yr" },
+  { pattern: "at least 3", label: "3-5yr" },
+  { pattern: "at least 4", label: "3-5yr" },
+  { pattern: "at least 5", label: "5+yr" },
+];
+
+function detectSeniorBadgeOverride(job) {
+  const haystack = `${job.title || ""} ${job.experience || ""}`.toLowerCase();
+  for (const { pattern, label } of SENIOR_BADGE_PATTERNS) {
+    if (haystack.includes(pattern)) {
+      return label;
+    }
+  }
+  return null;
+}
+
 function jobRowHtml(job, isEarlier = false) {
   const statusKey = job.status.toLowerCase();
-  const expBadge = job.tier === 1
-    ? '<span class="exp-badge tier1">0-1yr / Fresher</span>'
-    : '<span class="exp-badge tier2">1-3yr</span>';
+  const seniorOverride = detectSeniorBadgeOverride(job);
+  const expBadge = seniorOverride
+    ? `<span class="exp-badge tier2">${seniorOverride}</span>`
+    : job.tier === 1
+      ? '<span class="exp-badge tier1">0-1yr / Fresher</span>'
+      : '<span class="exp-badge tier2">1-3yr</span>';
 
   const statusPillClass = statusKey === "new" ? "" : statusKey;
   const pillContent = job.status === "NEW"

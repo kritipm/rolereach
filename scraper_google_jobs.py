@@ -52,6 +52,22 @@ def is_excluded_company(company_name):
     return any(keyword in lowered for keyword in config.GOOGLE_JOBS_COMPANY_EXCLUDE_KEYWORDS)
 
 
+# Literal substring check, deliberately separate from experience_filter.py's
+# regex-based numeric parsing — catches phrasing ("minimum 3", "at least 5")
+# that pattern wouldn't necessarily recognize as a number+years expression.
+SENIOR_EXPERIENCE_PATTERNS = [
+    "3-5 years", "4-6 years", "5-7 years", "5-8 years", "6-8 years", "6-9 years",
+    "7-9 years", "7-10 years", "8-10 years", "3+ years", "4+ years", "5+ years",
+    "6+ years", "7+ years", "8+ years", "minimum 3", "minimum 4", "minimum 5",
+    "at least 3", "at least 4", "at least 5",
+]
+
+
+def has_senior_experience_requirement(title, description):
+    haystack = f"{title} {description or ''}".lower()
+    return any(pattern in haystack for pattern in SENIOR_EXPERIENCE_PATTERNS)
+
+
 def is_recently_posted(posted_at_str):
     if not posted_at_str:
         return True
@@ -155,6 +171,9 @@ def scrape_google_jobs_pm_jobs():
                 if not is_location_allowed(job.get("location")):
                     continue
                 if not experience_filter.has_product_in_title(title):
+                    continue
+                if has_senior_experience_requirement(title, job.get("description")):
+                    print(f"[GoogleJobs] Skipped senior experience requirement: {title}")
                     continue
                 experience_text = " ".join(job.get("extensions") or []) + " " + (job.get("description") or "")
                 posted_at_str = (job.get("detected_extensions") or {}).get("posted_at", "")
