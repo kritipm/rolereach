@@ -561,20 +561,21 @@ DASHBOARD_HTML = r"""
   }
   .draft-panel.open { max-height: 400px; margin-top: 12px; }
   .draft-box {
-    background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 10px;
-    padding: 12px 14px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap;
-    color: var(--text-secondary); max-height: 260px; overflow-y: auto; margin-bottom: 8px;
+    background: var(--bg); border-radius: 6px;
+    padding: 12px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap;
+    color: var(--lavender); max-height: 260px; overflow-y: auto; margin-bottom: 8px;
   }
-  .copy-btn {
-    background: var(--pink-dark); border: 1px solid var(--pink-border); color: var(--pink);
-    font-size: 11.5px; font-weight: 700; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+  .job-action-btn {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--purple); color: var(--lavender);
+    border-radius: 8px; height: 44px; box-sizing: border-box; font-family: inherit;
+    font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: none;
+    transition: border-color 0.2s;
   }
-  .copy-btn.copied { background: var(--purple); color: #fff; border-color: var(--purple); }
-  .tab-toggle-btn {
-    background: var(--card); border: 1px solid var(--border); color: var(--text-muted);
-    font-size: 11.5px; font-weight: 700; padding: 6px 14px; border-radius: 8px; cursor: pointer;
-  }
-  .tab-toggle-btn.tab-active { background: var(--pink); border-color: var(--pink); color: #fff; }
+  .job-action-btn:hover { border-color: var(--pink); }
+  .job-action-btn.active { border-color: var(--pink); color: var(--pink); }
+  .job-action-btn.muted { border-color: var(--border); color: var(--text-muted); }
+  .job-action-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
   .empty-note, .loading-note { color: var(--text-muted); padding: 30px 0; text-align: center; }
 
@@ -843,6 +844,10 @@ function detectSeniorBadgeOverride(job) {
   return null;
 }
 
+const ICON_LINKEDIN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>';
+const ICON_EMAIL = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7 10-7"/></svg>';
+const ICON_DM = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
+
 function jobRowHtml(job, isEarlier = false) {
   const statusKey = job.status.toLowerCase();
   const seniorOverride = detectSeniorBadgeOverride(job);
@@ -875,31 +880,23 @@ function jobRowHtml(job, isEarlier = false) {
     contactChip = '<span class="contact-chip none">No contact</span>';
   }
 
-  // ---------- ROW 1: conditional job link ----------
-  let jobLinkRow = "";
-  if (job.url) {
-    if (job.url.includes("linkedin.com")) {
-      jobLinkRow = `<a href="${escapeHtml(job.url)}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="display:block; width:100%; box-sizing:border-box; background:#0A66C2; border-color:#0A66C2; color:#fff; text-decoration:none; text-align:center; margin-top:10px;">View on LinkedIn</a>`;
-    } else {
-      const jobSearchUrl = escapeHtml(linkedInJobSearchUrl(job.title, job.company));
-      jobLinkRow = `<div style="display:flex; gap:6px; margin-top:10px;">
-        <a href="${escapeHtml(job.url)}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="flex:1; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender); text-decoration:none; text-align:center;">View Posting</a>
-        <a href="${jobSearchUrl}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="flex:1; background:#0A66C2; border-color:#0A66C2; color:#fff; text-decoration:none; text-align:center;">Search on LinkedIn</a>
-      </div>`;
-    }
-  }
-
-  // ---------- ROW 2: always-shown Find Product Team ----------
+  // ---------- ROW 1: View Job + Product Team ----------
+  const jobSearchUrl = escapeHtml(linkedInJobSearchUrl(job.title, job.company));
+  const viewJobUrl = job.url && job.url.includes("linkedin.com") ? escapeHtml(job.url) : jobSearchUrl;
   const peopleSearchUrl = escapeHtml(linkedInSearchUrl(job.company));
-  const productTeamRow = `<a href="${peopleSearchUrl}" target="_blank" onclick="event.stopPropagation()" class="copy-btn" style="display:block; width:100%; box-sizing:border-box; background:#0A66C2; border-color:#0A66C2; color:#fff; text-decoration:none; text-align:center; margin-top:10px;">Find Product Team at ${escapeHtml(job.company || "this company")}</a>`;
 
-  // ---------- ROW 3: Email Draft / LinkedIn DM toggle tabs ----------
-  const toggleRow = `<div style="display:flex; gap:6px; margin-top:10px;">
-    <button id="tab-email-${job.job_id}" class="tab-toggle-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'email')">Email Draft</button>
-    <button id="tab-dm-${job.job_id}" class="tab-toggle-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'dm')">LinkedIn DM</button>
+  const row1 = `<div style="display:flex; gap:8px;">
+    <a href="${viewJobUrl}" target="_blank" onclick="event.stopPropagation()" class="job-action-btn" style="flex:1;">${ICON_LINKEDIN}<span>View Job</span></a>
+    <a href="${peopleSearchUrl}" target="_blank" onclick="event.stopPropagation()" class="job-action-btn" style="flex:1;">${ICON_LINKEDIN}<span>Product Team</span></a>
   </div>`;
 
-  // ---------- ROW 4: draft panel (email content + dm content, one shown at a time) ----------
+  // ---------- ROW 2: Email Draft / LinkedIn DM toggle ----------
+  const row2 = `<div style="display:flex; gap:8px; margin-top:8px;">
+    <button id="tab-email-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'email')">${ICON_EMAIL}<span>Email Draft</span></button>
+    <button id="tab-dm-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'dm')">${ICON_DM}<span>LinkedIn DM</span></button>
+  </div>`;
+
+  // ---------- DRAFT PANEL: email content + dm content, one shown at a time ----------
   const hasRealDraft = !!job.email_draft;
   let subjectLine, copySubject, bodyText;
   if (hasRealDraft) {
@@ -915,25 +912,23 @@ function jobRowHtml(job, isEarlier = false) {
   }
 
   const emailContent = `<div id="draft-content-email-${job.job_id}" style="display:none;">
-    <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(0,0,0,0.25); border-radius:8px; padding:8px 12px; margin-bottom:10px;">
-      <span style="font-size:12px; font-weight:700; color:var(--pink); flex:1;">${escapeHtml(subjectLine)}</span>
-    </div>
+    <div style="font-size:12px; font-weight:700; color:var(--pink); margin-bottom:8px;">${escapeHtml(subjectLine)}</div>
     <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(bodyText)}</div>
-    <div style="display:flex; gap:8px; margin-top:10px;">
-      <button class="copy-btn" style="flex:1;" onclick="event.stopPropagation(); copyTextInline('${escapeHtml(copySubject)}', this)">Copy Subject</button>
-      <button class="copy-btn" style="flex:1;" onclick="event.stopPropagation(); copyEmail('${escapeHtml(job.hm_email || "")}', this)">Copy Email</button>
-      <button class="copy-btn" style="flex:1; background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">${job.status === 'NEW' ? 'Mark Sent' : job.status}</button>
+    <div style="display:flex; gap:8px;">
+      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyTextInline('${escapeHtml(copySubject)}', this)"><span>Copy Subject</span></button>
+      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyEmail('${escapeHtml(job.hm_email || "")}', this)"><span>Copy Email</span></button>
+      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
     </div>
-    <button class="copy-btn" style="width:100%; box-sizing:border-box; margin-top:8px; background:var(--card); color:var(--text-muted); border-color:var(--border);" onclick="event.stopPropagation(); closeJob('${job.job_id}')">Close</button>
+    <button class="job-action-btn muted" style="width:100%; margin-top:8px;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
   </div>`;
 
   const dmText = dmTemplate(job);
   const dmContent = `<div id="draft-content-dm-${job.job_id}" style="display:none;">
     <div class="draft-box">${escapeHtml(dmText)}</div>
-    <button class="copy-btn" style="width:100%; box-sizing:border-box; background:var(--lavender-dark); border-color:var(--lavender-border); color:var(--lavender);" onclick="event.stopPropagation(); copyDM('${job.job_id}', this)">Copy DM</button>
+    <button class="job-action-btn" style="width:100%;" onclick="event.stopPropagation(); copyDM('${job.job_id}', this)"><span>Copy DM</span></button>
     <div style="display:flex; gap:8px; margin-top:8px;">
-      <button class="copy-btn" style="flex:1; background:var(--pink-dark); border-color:var(--pink-border); color:var(--pink);" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">${job.status === 'NEW' ? 'Mark Sent' : job.status}</button>
-      <button class="copy-btn" style="flex:1; background:var(--card); color:var(--text-muted); border-color:var(--border);" onclick="event.stopPropagation(); closeJob('${job.job_id}')">Close</button>
+      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
+      <button class="job-action-btn muted" style="flex:1;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
     </div>
   </div>`;
 
@@ -953,9 +948,10 @@ function jobRowHtml(job, isEarlier = false) {
       <span class="location-pill">&#128205; ${escapeHtml(job.location)}</span>
       <span class="job-bottom-right">${contactChip}</span>
     </div>
-    ${jobLinkRow}
-    ${productTeamRow}
-    ${toggleRow}
+    <div style="margin-top:10px;">
+      ${row1}
+      ${row2}
+    </div>
     ${draftPanel}
   </div>`;
 }
@@ -1118,8 +1114,8 @@ function selectDraftTab(jobId, tab) {
 
   panel.classList.add("open");
   panel.dataset.activeTab = tab;
-  emailBtn.classList.toggle("tab-active", tab === "email");
-  dmBtn.classList.toggle("tab-active", tab === "dm");
+  emailBtn.classList.toggle("active", tab === "email");
+  dmBtn.classList.toggle("active", tab === "dm");
   emailContent.style.display = tab === "email" ? "block" : "none";
   dmContent.style.display = tab === "dm" ? "block" : "none";
 }
@@ -1132,8 +1128,8 @@ function closeJob(jobId) {
     panel.classList.remove("open");
     panel.dataset.activeTab = "";
   }
-  if (emailBtn) emailBtn.classList.remove("tab-active");
-  if (dmBtn) dmBtn.classList.remove("tab-active");
+  if (emailBtn) emailBtn.classList.remove("active");
+  if (dmBtn) dmBtn.classList.remove("active");
 }
 
 function cleanSubjectForCopy(subjectLine) {
