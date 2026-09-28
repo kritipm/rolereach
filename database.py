@@ -140,11 +140,27 @@ def _init_postgres(conn):
             priority_fit_score_used     REAL,
             priority_freshness_score    REAL,
             priority_access_points      INTEGER,
-            priority_access_score       REAL
+            priority_access_score       REAL,
+            product_person_linkedin     TEXT,
+            product_person_name         TEXT,
+            product_person_role         TEXT,
+            product_folks_linkedin      TEXT,
+            attack_access_level         TEXT,
+            attack_priority             TEXT,
+            attack_intensity            TEXT,
+            attack_available_routes     TEXT,
+            attack_primary_route        TEXT,
+            attack_first_action         TEXT,
+            attack_action_sequence      TEXT,
+            attack_primary_contact      TEXT,
+            attack_primary_contact_linkedin TEXT,
+            attack_attributed_email     TEXT,
+            attack_job_application_url  TEXT,
+            attack_reason               TEXT
         )
         """
     )
-    # Add eligibility + fit + priority columns to pre-existing tables (idempotent)
+    # Add eligibility + fit + priority + attack columns to pre-existing tables (idempotent)
     for col, typedef in [
         ("eligibility_status", "TEXT"),
         ("eligibility_reason", "TEXT"),
@@ -175,6 +191,22 @@ def _init_postgres(conn):
         ("priority_freshness_score", "REAL"),
         ("priority_access_points", "INTEGER"),
         ("priority_access_score", "REAL"),
+        ("product_person_linkedin", "TEXT"),
+        ("product_person_name", "TEXT"),
+        ("product_person_role", "TEXT"),
+        ("product_folks_linkedin", "TEXT"),
+        ("attack_access_level", "TEXT"),
+        ("attack_priority", "TEXT"),
+        ("attack_intensity", "TEXT"),
+        ("attack_available_routes", "TEXT"),
+        ("attack_primary_route", "TEXT"),
+        ("attack_first_action", "TEXT"),
+        ("attack_action_sequence", "TEXT"),
+        ("attack_primary_contact", "TEXT"),
+        ("attack_primary_contact_linkedin", "TEXT"),
+        ("attack_attributed_email", "TEXT"),
+        ("attack_job_application_url", "TEXT"),
+        ("attack_reason", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
@@ -242,7 +274,23 @@ def _init_sqlite(conn):
             priority_fit_score_used     REAL,
             priority_freshness_score    REAL,
             priority_access_points      INTEGER,
-            priority_access_score       REAL
+            priority_access_score       REAL,
+            product_person_linkedin     TEXT,
+            product_person_name         TEXT,
+            product_person_role         TEXT,
+            product_folks_linkedin      TEXT,
+            attack_access_level         TEXT,
+            attack_priority             TEXT,
+            attack_intensity            TEXT,
+            attack_available_routes     TEXT,
+            attack_primary_route        TEXT,
+            attack_first_action         TEXT,
+            attack_action_sequence      TEXT,
+            attack_primary_contact      TEXT,
+            attack_primary_contact_linkedin TEXT,
+            attack_attributed_email     TEXT,
+            attack_job_application_url  TEXT,
+            attack_reason               TEXT
         )
         """
     )
@@ -340,6 +388,38 @@ def _init_sqlite(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN priority_access_points INTEGER")
     if "priority_access_score" not in existing_columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN priority_access_score REAL")
+    if "product_person_linkedin" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_person_linkedin TEXT")
+    if "product_person_name" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_person_name TEXT")
+    if "product_person_role" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_person_role TEXT")
+    if "product_folks_linkedin" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_folks_linkedin TEXT")
+    if "attack_access_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_access_level TEXT")
+    if "attack_priority" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_priority TEXT")
+    if "attack_intensity" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_intensity TEXT")
+    if "attack_available_routes" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_available_routes TEXT")
+    if "attack_primary_route" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_primary_route TEXT")
+    if "attack_first_action" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_first_action TEXT")
+    if "attack_action_sequence" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_action_sequence TEXT")
+    if "attack_primary_contact" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_primary_contact TEXT")
+    if "attack_primary_contact_linkedin" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_primary_contact_linkedin TEXT")
+    if "attack_attributed_email" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_attributed_email TEXT")
+    if "attack_job_application_url" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_job_application_url TEXT")
+    if "attack_reason" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_reason TEXT")
 
 
 def save_job(conn, job):
@@ -615,6 +695,57 @@ def fetch_all_job_actions():
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM user_actions").fetchall()
         return {row["job_id"]: dict(row) for row in rows}
+
+
+def fetch_jobs_needing_attack_route():
+    """Return ELIGIBLE/REVIEW jobs that have a priority level but no attack route yet."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+              AND priority_level IS NOT NULL
+              AND attack_access_level IS NULL
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_attack_route(conn, comment_id, result):
+    """Write attack route assessment back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            attack_access_level             = ?,
+            attack_priority                 = ?,
+            attack_intensity                = ?,
+            attack_available_routes         = ?,
+            attack_primary_route            = ?,
+            attack_first_action             = ?,
+            attack_action_sequence          = ?,
+            attack_primary_contact          = ?,
+            attack_primary_contact_linkedin = ?,
+            attack_attributed_email         = ?,
+            attack_job_application_url      = ?,
+            attack_reason                   = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["attack_access_level"],
+            result["attack_priority"],
+            result["attack_intensity"],
+            result["attack_available_routes"],
+            result["attack_primary_route"],
+            result["attack_first_action"],
+            result["attack_action_sequence"],
+            result["attack_primary_contact"],
+            result["attack_primary_contact_linkedin"],
+            result["attack_attributed_email"],
+            result["attack_job_application_url"],
+            result["attack_reason"],
+            comment_id,
+        ),
+    )
 
 
 def fetch_jobs_needing_priority():

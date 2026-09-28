@@ -23,6 +23,8 @@ PIPELINE_STEPS = [
     "run_fit_assessment.py",
     # Priority Engine ranks scored jobs by Fit + Freshness + Access
     "run_priority.py",
+    # Attack Route determines how to approach each eligible opportunity
+    "run_attack_route.py",
     "enricher_snov.py",
     "drafter_claude.py",
     "telegram_bot.py",
@@ -83,6 +85,7 @@ def run_pipeline():
         run_step("run_eligibility.py")
         run_step("run_fit_assessment.py")
         run_step("run_priority.py")
+        run_step("run_attack_route.py")
 
     sync_db_to_railway()
 
