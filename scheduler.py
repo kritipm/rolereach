@@ -21,6 +21,8 @@ PIPELINE_STEPS = [
     "run_eligibility.py",
     # Fit Assessment scores ELIGIBLE/REVIEW jobs before enrichment runs
     "run_fit_assessment.py",
+    # Priority Engine ranks scored jobs by Fit + Freshness + Access
+    "run_priority.py",
     "enricher_snov.py",
     "drafter_claude.py",
     "telegram_bot.py",
@@ -80,6 +82,7 @@ def run_pipeline():
         run_step("scraper_yc.py")
         run_step("run_eligibility.py")
         run_step("run_fit_assessment.py")
+        run_step("run_priority.py")
 
     sync_db_to_railway()
 

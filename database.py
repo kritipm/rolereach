@@ -134,11 +134,17 @@ def _init_postgres(conn):
             domain_fit_level            TEXT,
             overall_fit_score           REAL,
             overall_fit_level           TEXT,
-            fit_evidence                TEXT
+            fit_evidence                TEXT,
+            priority_score              REAL,
+            priority_level              TEXT,
+            priority_fit_score_used     REAL,
+            priority_freshness_score    REAL,
+            priority_access_points      INTEGER,
+            priority_access_score       REAL
         )
         """
     )
-    # Add eligibility + fit columns to pre-existing tables (idempotent)
+    # Add eligibility + fit + priority columns to pre-existing tables (idempotent)
     for col, typedef in [
         ("eligibility_status", "TEXT"),
         ("eligibility_reason", "TEXT"),
@@ -163,6 +169,12 @@ def _init_postgres(conn):
         ("overall_fit_score", "REAL"),
         ("overall_fit_level", "TEXT"),
         ("fit_evidence", "TEXT"),
+        ("priority_score", "REAL"),
+        ("priority_level", "TEXT"),
+        ("priority_fit_score_used", "REAL"),
+        ("priority_freshness_score", "REAL"),
+        ("priority_access_points", "INTEGER"),
+        ("priority_access_score", "REAL"),
     ]:
         try:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
@@ -224,7 +236,13 @@ def _init_sqlite(conn):
             domain_fit_level            TEXT,
             overall_fit_score           REAL,
             overall_fit_level           TEXT,
-            fit_evidence                TEXT
+            fit_evidence                TEXT,
+            priority_score              REAL,
+            priority_level              TEXT,
+            priority_fit_score_used     REAL,
+            priority_freshness_score    REAL,
+            priority_access_points      INTEGER,
+            priority_access_score       REAL
         )
         """
     )
@@ -310,6 +328,18 @@ def _init_sqlite(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN overall_fit_level TEXT")
     if "fit_evidence" not in existing_columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN fit_evidence TEXT")
+    if "priority_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_score REAL")
+    if "priority_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_level TEXT")
+    if "priority_fit_score_used" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_fit_score_used REAL")
+    if "priority_freshness_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_freshness_score REAL")
+    if "priority_access_points" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_access_points INTEGER")
+    if "priority_access_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_access_score REAL")
 
 
 def save_job(conn, job):
@@ -585,3 +615,42 @@ def fetch_all_job_actions():
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM user_actions").fetchall()
         return {row["job_id"]: dict(row) for row in rows}
+
+
+def fetch_jobs_needing_priority():
+    """Return ELIGIBLE/REVIEW jobs with completed fit assessment but no priority score."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+              AND role_fit_score IS NOT NULL
+              AND priority_score IS NULL
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_priority(conn, comment_id, result):
+    """Write priority score and component inputs back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            priority_score           = ?,
+            priority_level           = ?,
+            priority_fit_score_used  = ?,
+            priority_freshness_score = ?,
+            priority_access_points   = ?,
+            priority_access_score    = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["priority_score"],
+            result["priority_level"],
+            result["priority_fit_score_used"],
+            result["priority_freshness_score"],
+            result["priority_access_points"],
+            result["priority_access_score"],
+            comment_id,
+        ),
+    )
