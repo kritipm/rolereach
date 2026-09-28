@@ -27,6 +27,8 @@ PIPELINE_STEPS = [
     "run_attack_route.py",
     "enricher_snov.py",
     "drafter_claude.py",
+    # Execution Packet runs after drafter so email_draft is available in the packet
+    "run_execution_packet.py",
     "telegram_bot.py",
 ]
 
@@ -86,6 +88,7 @@ def run_pipeline():
         run_step("run_fit_assessment.py")
         run_step("run_priority.py")
         run_step("run_attack_route.py")
+        run_step("run_execution_packet.py")
 
     sync_db_to_railway()
 

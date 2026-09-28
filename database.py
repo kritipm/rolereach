@@ -156,11 +156,13 @@ def _init_postgres(conn):
             attack_primary_contact_linkedin TEXT,
             attack_attributed_email     TEXT,
             attack_job_application_url  TEXT,
-            attack_reason               TEXT
+            attack_reason               TEXT,
+            linkedin_draft              TEXT,
+            execution_packet            TEXT
         )
         """
     )
-    # Add eligibility + fit + priority + attack columns to pre-existing tables (idempotent)
+    # Add eligibility + fit + priority + attack + execution columns to pre-existing tables (idempotent)
     for col, typedef in [
         ("eligibility_status", "TEXT"),
         ("eligibility_reason", "TEXT"),
@@ -207,6 +209,8 @@ def _init_postgres(conn):
         ("attack_attributed_email", "TEXT"),
         ("attack_job_application_url", "TEXT"),
         ("attack_reason", "TEXT"),
+        ("linkedin_draft", "TEXT"),
+        ("execution_packet", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
@@ -290,7 +294,9 @@ def _init_sqlite(conn):
             attack_primary_contact_linkedin TEXT,
             attack_attributed_email     TEXT,
             attack_job_application_url  TEXT,
-            attack_reason               TEXT
+            attack_reason               TEXT,
+            linkedin_draft              TEXT,
+            execution_packet            TEXT
         )
         """
     )
@@ -420,6 +426,10 @@ def _init_sqlite(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN attack_job_application_url TEXT")
     if "attack_reason" not in existing_columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN attack_reason TEXT")
+    if "linkedin_draft" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN linkedin_draft TEXT")
+    if "execution_packet" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN execution_packet TEXT")
 
 
 def save_job(conn, job):
@@ -643,8 +653,9 @@ def fetch_jobs_needing_draft():
 
 def update_email_draft(comment_id, email_draft):
     with get_connection() as conn:
+        # Reset execution_packet so Layer 5 rebuilds it with the new email content
         conn.execute(
-            "UPDATE jobs SET email_draft = ? WHERE comment_id = ?",
+            "UPDATE jobs SET email_draft = ?, execution_packet = NULL WHERE comment_id = ?",
             (email_draft, comment_id),
         )
         conn.commit()
@@ -743,6 +754,37 @@ def update_attack_route(conn, comment_id, result):
             result["attack_attributed_email"],
             result["attack_job_application_url"],
             result["attack_reason"],
+            comment_id,
+        ),
+    )
+
+
+def fetch_jobs_needing_execution_packet():
+    """Return jobs that have an attack plan but no execution packet yet."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE attack_access_level IS NOT NULL
+              AND execution_packet IS NULL
+              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_execution_packet(conn, comment_id, result):
+    """Write execution packet and LinkedIn draft back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            linkedin_draft   = ?,
+            execution_packet = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["linkedin_draft"],
+            result["execution_packet"],
             comment_id,
         ),
     )

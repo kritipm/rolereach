@@ -197,6 +197,11 @@ def api_jobs():
                 "status": j["status"],
                 "group": j["group"],
                 "posted_at": j.get("posted_at"),
+                "attack_priority": j.get("attack_priority"),
+                "attack_intensity": j.get("attack_intensity"),
+                "attack_action_sequence": j.get("attack_action_sequence"),
+                "execution_packet": j.get("execution_packet"),
+                "linkedin_draft": j.get("linkedin_draft"),
             }
             for j in jobs
         ]
@@ -635,6 +640,39 @@ DASHBOARD_HTML = r"""
     background: var(--card);
     color: var(--text-primary);
   }
+
+  /* ---------- ATTACK PLAN (Layer 5) ---------- */
+  .attack-badge {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 999px;
+    font-size: 10px; font-weight: 800;
+    letter-spacing: 0.5px; white-space: nowrap;
+    cursor: default; pointer-events: none;
+  }
+  .attack-badge.p1 { background: var(--pink-dark); border: 1px solid var(--pink-border); color: var(--pink); box-shadow: 0 0 8px var(--pink-glow); }
+  .attack-badge.p2 { background: var(--lavender-dark); border: 1px solid var(--lavender-border); color: var(--lavender); }
+  .attack-badge.p3 { background: rgba(80,80,96,0.18); border: 1px solid var(--border); color: var(--text-muted); }
+  .exec-step {
+    border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+    background: var(--bg);
+  }
+  .exec-step-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  }
+  .exec-step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--pink-dark); border: 1px solid var(--pink-border);
+    color: var(--pink); font-size: 11px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .exec-step-label { font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  .exec-person { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+  .exec-email-addr { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; font-family: "SF Mono", Consolas, monospace; }
+  .exec-subject { font-size: 11.5px; color: var(--pink); margin-bottom: 6px; }
+  .exec-link { font-size: 12.5px; font-weight: 700; color: var(--lavender); text-decoration: none; display: inline-flex; align-items: center; margin-bottom: 6px; }
+  .exec-link:hover { color: var(--pink); }
+  .exec-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -848,6 +886,80 @@ const ICON_LINKEDIN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="cur
 const ICON_EMAIL = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7 10-7"/></svg>';
 const ICON_DM = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 
+function copyFromId(elementId, btn) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const text = el.textContent;
+  const orig = btn.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = "Copied!";
+    btn.style.color = "var(--pink)";
+    setTimeout(() => { btn.textContent = orig; btn.style.color = ""; }, 1800);
+  }).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+    btn.textContent = "Copied!";
+    setTimeout(() => { btn.textContent = orig; }, 1800);
+  });
+}
+
+function toggleAttackPlan(jobId) {
+  const panel = document.getElementById("draft-panel-" + jobId);
+  if (!panel) return;
+  if (panel.classList.contains("open")) {
+    panel.classList.remove("open");
+  } else {
+    panel.classList.add("open");
+  }
+}
+
+function renderExecStep(jobId, step, job) {
+  const num = step.step || 1;
+  const type = step.type || "none";
+  const label = step.label || type;
+  const sid = `${jobId}-${num}`;
+  let body = "";
+
+  if (type === "linkedin") {
+    const personName = step.person_name || "";
+    const personRole = step.person_role || "";
+    const linkedinUrl = step.linkedin_url || "";
+    const draft = step.draft || (job && job.linkedin_draft) || "";
+    const personLine = [personName, personRole].filter(Boolean).join(" · ");
+    body = (personLine ? `<div class="exec-person">${escapeHtml(personLine)}</div>` : "")
+      + (linkedinUrl ? `<a href="${escapeHtml(linkedinUrl)}" target="_blank" class="exec-link" onclick="event.stopPropagation()">Open LinkedIn ↗</a><br>` : "")
+      + (draft ? `<pre id="exec-d-${sid}" style="display:none">${escapeHtml(draft)}</pre><div class="draft-box" style="margin-top:6px;">${escapeHtml(draft)}</div><div class="exec-actions"><button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyFromId('exec-d-${sid}', this)"><span>Copy DM</span></button></div>` : "");
+  } else if (type === "email") {
+    const email = step.recipient_email || "";
+    const subj = step.subject || "";
+    const draft = step.draft || "";
+    body = (email ? `<div class="exec-email-addr">${escapeHtml(email)}</div>` : "")
+      + (subj ? `<div class="exec-subject">Subject: ${escapeHtml(subj)}</div>` : "")
+      + (draft ? `<pre id="exec-d-${sid}" style="display:none">${escapeHtml(draft)}</pre>`
+                + `<pre id="exec-s-${sid}" style="display:none">${escapeHtml(subj)}</pre>`
+                + `<pre id="exec-e-${sid}" style="display:none">${escapeHtml(email)}</pre>`
+                + `<div class="draft-box" style="margin-top:6px;">${escapeHtml(draft)}</div>`
+                + `<div class="exec-actions">`
+                + (subj ? `<button class="job-action-btn" onclick="event.stopPropagation(); copyFromId('exec-s-${sid}', this)"><span>Copy Subject</span></button>` : "")
+                + (email ? `<button class="job-action-btn" onclick="event.stopPropagation(); copyFromId('exec-e-${sid}', this)"><span>Copy Email</span></button>` : "")
+                + `<button class="job-action-btn" onclick="event.stopPropagation(); copyFromId('exec-d-${sid}', this)"><span>Copy Body</span></button></div>` : "");
+  } else if (type === "email_unattributed") {
+    const email = step.recipient_email || "";
+    const note = step.note || "Unattributed email — apply directly or locate the hiring contact.";
+    body = (email ? `<div class="exec-email-addr">${escapeHtml(email)}</div>` : "")
+      + `<div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">${escapeHtml(note)}</div>`;
+  } else if (type === "apply") {
+    const url = step.url || "";
+    body = url
+      ? `<a href="${escapeHtml(url)}" target="_blank" class="job-action-btn" style="display:inline-flex; text-decoration:none; margin-top:4px;" onclick="event.stopPropagation()"><span>OPEN ↗</span></a>`
+      : `<div style="font-size:12px; color:var(--text-muted);">No application link available.</div>`;
+  } else {
+    body = `<div style="font-size:12px; color:var(--text-muted);">${escapeHtml(label)}</div>`;
+  }
+
+  return `<div class="exec-step"><div class="exec-step-header"><span class="exec-step-num">${num}</span><span class="exec-step-label">${escapeHtml(label)}</span></div><div>${body}</div></div>`;
+}
+
 function jobRowHtml(job, isEarlier = false) {
   const statusKey = job.status.toLowerCase();
   const seniorOverride = detectSeniorBadgeOverride(job);
@@ -890,52 +1002,97 @@ function jobRowHtml(job, isEarlier = false) {
     <a href="${peopleSearchUrl}" target="_blank" onclick="event.stopPropagation()" class="job-action-btn" style="flex:1;">${ICON_LINKEDIN}<span>Product Team</span></a>
   </div>`;
 
-  // ---------- ROW 2: Email Draft / LinkedIn DM toggle ----------
-  const row2 = `<div style="display:flex; gap:8px; margin-top:8px;">
-    <button id="tab-email-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'email')">${ICON_EMAIL}<span>Email Draft</span></button>
-    <button id="tab-dm-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'dm')">${ICON_DM}<span>LinkedIn DM</span></button>
-  </div>`;
+  // ---------- Attack badge ----------
+  const attackBadgeHtml = job.attack_priority
+    ? `<span class="attack-badge ${job.attack_priority.toLowerCase()}">${escapeHtml(job.attack_priority)}${job.attack_intensity ? " — " + escapeHtml(job.attack_intensity) : ""}</span>`
+    : "";
 
-  // ---------- DRAFT PANEL: email content + dm content, one shown at a time ----------
-  const hasRealDraft = !!job.email_draft;
-  let subjectLine, copySubject, bodyText;
-  if (hasRealDraft) {
-    const lines = job.email_draft.split('\n');
-    subjectLine = lines.find(l => l.startsWith('Subject:')) || 'Subject: Diagnosed. Fixed. Shipped. Applying for APM.';
-    copySubject = cleanSubjectForCopy(subjectLine);
-    const bodyLines = lines.filter(l => !l.startsWith('Subject:'));
-    bodyText = bodyLines.join('\n').trim();
-  } else {
-    subjectLine = "Subject: Diagnosed. Fixed. Shipped. Applying for APM.";
-    copySubject = cleanSubjectForCopy(subjectLine);
-    bodyText = `Hi there,\n\nI noticed something specific about ${job.company || "[Company]"}'s product worth paying attention to.\n\nI'm applying for the ${job.title || "[Role]"} role. I come from a design background and have been building in product — activation flows, user reachability, documented tradeoffs. Not just thinking. Actually shipping.\n\nPortfolio: https://kriti-portfolio-pm.vercel.app/\nCV attached.\n\nWarmly,\nKriti`;
+  // ---------- ROW 2 + DRAFT PANEL: execution plan (Layer 5) or legacy tabs ----------
+  let execPacket = null;
+  if (job.execution_packet) {
+    try { execPacket = JSON.parse(job.execution_packet); } catch(e) {}
   }
 
-  const emailContent = `<div id="draft-content-email-${job.job_id}" style="display:none;">
-    <div style="font-size:12px; font-weight:700; color:var(--pink); margin-bottom:8px;">${escapeHtml(subjectLine)}</div>
-    <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(bodyText)}</div>
-    <div style="display:flex; gap:8px;">
-      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyTextInline('${escapeHtml(copySubject)}', this)"><span>Copy Subject</span></button>
-      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyEmail('${escapeHtml(job.hm_email || "")}', this)"><span>Copy Email</span></button>
-      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
-    </div>
-    <button class="job-action-btn muted" style="width:100%; margin-top:8px;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
-  </div>`;
+  let row2, draftPanel;
 
-  const dmText = dmTemplate(job);
-  const dmContent = `<div id="draft-content-dm-${job.job_id}" style="display:none;">
-    <div class="draft-box">${escapeHtml(dmText)}</div>
-    <button class="job-action-btn" style="width:100%;" onclick="event.stopPropagation(); copyDM('${job.job_id}', this)"><span>Copy DM</span></button>
-    <div style="display:flex; gap:8px; margin-top:8px;">
-      <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
-      <button class="job-action-btn muted" style="flex:1;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
-    </div>
-  </div>`;
+  if (execPacket && execPacket.steps && execPacket.steps.length) {
+    // ---------- EXECUTION PLAN ----------
+    const ap = execPacket.attack_priority || "—";
+    const ai = execPacket.attack_intensity || "";
+    const apClass = ap.toLowerCase();
 
-  const draftPanel = `<div class="draft-panel" id="draft-panel-${job.job_id}" data-active-tab="">
-    ${emailContent}
-    ${dmContent}
-  </div>`;
+    row2 = `<div style="margin-top:8px;">
+      <button class="job-action-btn" id="attack-plan-btn-${job.job_id}"
+        style="width:100%; display:flex; align-items:center; gap:10px;"
+        onclick="event.stopPropagation(); toggleAttackPlan('${job.job_id}')">
+        <span class="attack-badge ${apClass}" style="pointer-events:none;">${escapeHtml(ap)}${ai ? " — " + escapeHtml(ai) : ""}</span>
+        <span style="flex:1; text-align:left; font-size:11.5px; font-weight:700; color:var(--text-secondary);">Attack Plan</span>
+        <span style="font-size:11px; color:var(--text-muted);">▼</span>
+      </button>
+    </div>`;
+
+    let stepsHtml = "";
+    for (const step of execPacket.steps) {
+      stepsHtml += renderExecStep(job.job_id, step, job);
+    }
+
+    draftPanel = `<div class="draft-panel" id="draft-panel-${job.job_id}">
+      <div style="margin-top:8px;">
+        ${stepsHtml}
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
+          <button class="job-action-btn muted" style="flex:1;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
+        </div>
+      </div>
+    </div>`;
+
+  } else {
+    // ---------- LEGACY: Email Draft / LinkedIn DM tabs ----------
+    row2 = `<div style="display:flex; gap:8px; margin-top:8px;">
+      <button id="tab-email-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'email')">${ICON_EMAIL}<span>Email Draft</span></button>
+      <button id="tab-dm-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'dm')">${ICON_DM}<span>LinkedIn DM</span></button>
+    </div>`;
+
+    const hasRealDraft = !!job.email_draft;
+    let subjectLine, copySubject, bodyText;
+    if (hasRealDraft) {
+      const lines = job.email_draft.split('\n');
+      subjectLine = lines.find(l => l.startsWith('Subject:')) || 'Subject: Diagnosed. Fixed. Shipped. Applying for APM.';
+      copySubject = cleanSubjectForCopy(subjectLine);
+      const bodyLines = lines.filter(l => !l.startsWith('Subject:'));
+      bodyText = bodyLines.join('\n').trim();
+    } else {
+      subjectLine = "Subject: Diagnosed. Fixed. Shipped. Applying for APM.";
+      copySubject = cleanSubjectForCopy(subjectLine);
+      bodyText = `Hi there,\n\nI noticed something specific about ${job.company || "[Company]"}'s product worth paying attention to.\n\nI'm applying for the ${job.title || "[Role]"} role. I come from a design background and have been building in product — activation flows, user reachability, documented tradeoffs. Not just thinking. Actually shipping.\n\nPortfolio: https://kriti-portfolio-pm.vercel.app/\nCV attached.\n\nWarmly,\nKriti`;
+    }
+
+    const emailContent = `<div id="draft-content-email-${job.job_id}" style="display:none;">
+      <div style="font-size:12px; font-weight:700; color:var(--pink); margin-bottom:8px;">${escapeHtml(subjectLine)}</div>
+      <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(bodyText)}</div>
+      <div style="display:flex; gap:8px;">
+        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyTextInline('${escapeHtml(copySubject)}', this)"><span>Copy Subject</span></button>
+        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyEmail('${escapeHtml(job.hm_email || "")}', this)"><span>Copy Email</span></button>
+        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
+      </div>
+      <button class="job-action-btn muted" style="width:100%; margin-top:8px;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
+    </div>`;
+
+    const dmText = dmTemplate(job);
+    const dmContent = `<div id="draft-content-dm-${job.job_id}" style="display:none;">
+      <div class="draft-box">${escapeHtml(dmText)}</div>
+      <button class="job-action-btn" style="width:100%;" onclick="event.stopPropagation(); copyDM('${job.job_id}', this)"><span>Copy DM</span></button>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
+        <button class="job-action-btn muted" style="flex:1;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
+      </div>
+    </div>`;
+
+    draftPanel = `<div class="draft-panel" id="draft-panel-${job.job_id}" data-active-tab="">
+      ${emailContent}
+      ${dmContent}
+    </div>`;
+  }
 
   return `<div class="job-row status-${statusKey}" id="job-${job.job_id}">
     <div class="job-top">
@@ -946,6 +1103,7 @@ function jobRowHtml(job, isEarlier = false) {
     <div class="job-bottom">
       <span class="job-company">${escapeHtml(job.company)}</span>
       <span class="location-pill">&#128205; ${escapeHtml(job.location)}</span>
+      ${attackBadgeHtml}
       <span class="job-bottom-right">${contactChip}</span>
     </div>
     <div style="margin-top:10px;">
