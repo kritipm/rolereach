@@ -128,6 +128,113 @@ def last_run_timestamp():
     return datetime.fromtimestamp(os.path.getmtime(config.DB_PATH)).isoformat(timespec="seconds")
 
 
+# ---------- API: Public aggregate stats (Layer 1-6 summary) ----------
+
+
+@app.route("/api/summary")
+def api_summary():
+    """Public aggregate stats — no passkey required."""
+    database.init_db()
+
+    def _count(conn, query, params=()):
+        r = conn.execute(query, params).fetchone()
+        return (r["cnt"] or 0) if r else 0
+
+    with database.get_connection() as conn:
+        discovered = _count(conn, "SELECT COUNT(*) as cnt FROM jobs")
+        eligible = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE eligibility_status IN ('ELIGIBLE','REVIEW')")
+        p1 = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE attack_priority='P1'")
+        p2 = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE attack_priority='P2'")
+        p3 = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE attack_priority='P3'")
+        contacts = _count(
+            conn,
+            "SELECT COUNT(*) as cnt FROM jobs WHERE eligibility_status IN ('ELIGIBLE','REVIEW')"
+            " AND (hm_email IS NOT NULL OR company_linkedin IS NOT NULL)",
+        )
+        attacks_ready = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE execution_packet IS NOT NULL")
+        today_cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+        new_today = _count(
+            conn,
+            "SELECT COUNT(*) as cnt FROM jobs WHERE posted_at >= ? OR notified = 0",
+            (today_cutoff,),
+        )
+        source_rows = conn.execute(
+            "SELECT source, COUNT(*) as cnt FROM jobs"
+            " WHERE eligibility_status IN ('ELIGIBLE','REVIEW') GROUP BY source"
+        ).fetchall()
+        sources = {r["source"]: r["cnt"] for r in source_rows}
+
+    return jsonify({
+        "discovered": discovered,
+        "eligible": eligible,
+        "p1": p1,
+        "p2": p2,
+        "p3": p3,
+        "prioritized": p1 + p2 + p3,
+        "contacts_found": contacts,
+        "attacks_ready": attacks_ready,
+        "new_today": new_today,
+        "sources": sources,
+        "last_run": last_run_timestamp(),
+    })
+
+
+# ---------- API: Enriched eligible opportunities (Layers 1–5) ----------
+
+
+@app.route("/api/opportunities")
+def api_opportunities():
+    """Eligible jobs with all 6-layer data — no passkey required."""
+    database.init_db()
+    with database.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs"
+            " WHERE eligibility_status IN ('ELIGIBLE','REVIEW')"
+            " AND attack_priority IS NOT NULL"
+            " ORDER BY"
+            " CASE attack_priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END,"
+            " COALESCE(priority_score, 0) DESC"
+        ).fetchall()
+
+    jobs = []
+    for r in rows:
+        job = dict(r)
+        jobs.append({
+            "job_id": str(job["comment_id"]),
+            "title": get_title(job),
+            "company": job.get("author") or "",
+            "source": job.get("source") or "",
+            "source_label": SOURCE_LABELS.get(job.get("source") or "", job.get("source") or ""),
+            "location": get_location(job),
+            "experience": get_experience(job),
+            "url": job.get("url"),
+            "posted_at": job.get("posted_at"),
+            "eligibility_status": job.get("eligibility_status"),
+            "eligibility_reason": job.get("eligibility_reason"),
+            "attack_priority": job.get("attack_priority"),
+            "attack_intensity": job.get("attack_intensity"),
+            "attack_reason": job.get("attack_reason"),
+            "attack_action_sequence": job.get("attack_action_sequence"),
+            "attack_access_level": job.get("attack_access_level"),
+            "priority_score": job.get("priority_score"),
+            "fit_score": job.get("fit_score"),
+            "role_fit": job.get("role_fit"),
+            "experience_fit": job.get("experience_fit"),
+            "skill_fit": job.get("skill_fit"),
+            "portfolio_fit": job.get("portfolio_fit"),
+            "domain_fit": job.get("domain_fit"),
+            "overall_fit": job.get("overall_fit"),
+            "hm_email": job.get("hm_email"),
+            "hm_name": job.get("hm_name"),
+            "company_linkedin": job.get("company_linkedin"),
+            "email_draft": job.get("email_draft"),
+            "linkedin_draft": job.get("linkedin_draft"),
+            "execution_packet": job.get("execution_packet"),
+        })
+
+    return jsonify(jobs)
+
+
 # ---------- Pages ----------
 
 
@@ -871,1145 +978,860 @@ DASHBOARD_HTML = r"""
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RoleReach</title>
 <style>
-  :root {
-    --bg: #09081C;
-    --card: #100F2A;
-    --card-hover: #171540;
-    --border: #1A183C;
-    --pink: #C830F0;
-    --pink-glow: rgba(200,48,240,0.4);
-    --pink-dark: #180828;
-    --pink-border: #2C0A42;
-    --purple: #8060C0;
-    --lavender: #DDB0FF;
-    --lavender-dark: #140C2C;
-    --lavender-border: #201848;
-    --text-primary: #FFFFFF;
-    --text-secondary: #EFEFEF;
-    --text-muted: #B0B0B0;
-    --text-dim: #505060;
-    --gradient-hot: linear-gradient(135deg, #8060C0, #C830F0);
-    --gradient-full: linear-gradient(135deg, #8060C0, #C830F0, #DDB0FF);
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    min-height: 100vh;
-  }
-  .mono { font-family: "SF Mono", "Cascadia Code", Consolas, monospace; }
+:root {
+  --bg: #09081C; --card: #100F2A; --card-hover: #171540; --border: #1A183C;
+  --pink: #C830F0; --pink-glow: rgba(200,48,240,0.35);
+  --pink-dark: #180828; --pink-border: #2C0A42;
+  --purple: #8060C0; --lavender: #DDB0FF;
+  --lavender-dark: #140C2C; --lavender-border: #201848;
+  --green: #30E0A0; --green-dark: #051A10; --green-border: #0A3020;
+  --yellow: #F0C040; --yellow-dark: #1A1000; --yellow-border: #302000;
+  --red: #F04060; --red-dark: #1A0010; --red-border: #3A0020;
+  --text-primary: #FFFFFF; --text-secondary: #EFEFEF;
+  --text-muted: #B0B0B0; --text-dim: #505060;
+  --gradient-hot: linear-gradient(135deg, #8060C0, #C830F0);
+  --p1: #C830F0; --p1-dark: #180828; --p1-border: #2C0A42; --p1-glow: rgba(200,48,240,0.35);
+  --p2: #8060C0; --p2-dark: #140C2C; --p2-border: #201848;
+  --p3: #606070; --p3-dark: rgba(80,80,96,0.15); --p3-border: #3A3A4C;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh;}
+.mono{font-family:"SF Mono","Cascadia Code",Consolas,monospace;}
 
-  header { padding: 30px 36px 0 36px; }
-  h1 {
-    margin: 0 0 4px 0;
-    font-size: 24px;
-    font-weight: 800;
-    letter-spacing: 0.4px;
-    background: linear-gradient(90deg, #FFFFFF, var(--pink));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    display: inline-block;
-  }
-  .tabs { display: flex; gap: 4px; margin: 22px 0 0 0; border-bottom: 1px solid var(--border); padding: 0 36px; }
-  .tab-btn {
-    background: none; border: none; color: var(--text-muted); font-size: 14.5px; font-weight: 700;
-    padding: 12px 18px; cursor: pointer; border-bottom: 3px solid transparent;
-    transition: color 0.15s ease, border-color 0.15s ease;
-  }
-  .tab-btn:hover { color: var(--text-primary); }
-  .tab-btn.active { color: var(--pink); border-bottom-color: var(--pink); }
+/* ---- NAV ---- */
+.site-header{display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:52px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:100;}
+.logo{font-size:17px;font-weight:800;background:var(--gradient-hot);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.tab-nav{display:flex;gap:2px;}
+.tab-btn{background:none;border:none;color:var(--text-dim);font-size:12px;font-weight:800;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:0.5px;transition:color 0.15s,border-color 0.15s;}
+.tab-btn:hover{color:var(--text-muted);}
+.tab-btn.active{color:var(--pink);border-bottom-color:var(--pink);}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
 
-  main { padding: 30px 36px 70px 36px; max-width: 1320px; margin: 0 auto; }
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
+/* ---- HOME ---- */
+.home-wrap{max-width:900px;margin:0 auto;padding:40px 24px 60px;}
+.home-hero{margin-bottom:36px;}
+.home-hero h1{font-size:32px;font-weight:800;line-height:1.2;background:linear-gradient(90deg,#FFF,var(--pink));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.home-hero p{font-size:14px;color:var(--text-muted);margin-top:8px;max-width:480px;line-height:1.6;}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:40px;}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 16px;}
+.stat-val{font-size:32px;font-weight:900;line-height:1;}
+.stat-label{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:5px;}
+.stat-card.pink .stat-val{color:var(--pink);}
+.stat-card.lav .stat-val{color:var(--lavender);}
+.stat-card.green .stat-val{color:var(--green);}
+.stat-card.dim .stat-val{color:var(--text-primary);}
 
-  /* ---------- AGENT TAB ---------- */
-  .hero-row { display: flex; align-items: baseline; gap: 18px; margin-bottom: 20px; flex-wrap: wrap; }
-  .hero-number { font-size: 64px; font-weight: 800; line-height: 1;
-    background: linear-gradient(90deg, #FFFFFF, var(--pink));
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .hero-caption { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.journey-section{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;}
+.journey-label{font-size:11px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:16px;}
+.journey-stages{display:flex;flex-direction:column;gap:10px;}
+.journey-stage{display:flex;align-items:center;gap:14px;padding:10px 14px;border-radius:10px;background:var(--bg);}
+.stage-num{width:26px;height:26px;border-radius:50%;background:var(--gradient-hot);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;}
+.stage-name{font-size:13px;font-weight:800;color:var(--text-primary);min-width:90px;}
+.stage-desc{font-size:12px;color:var(--text-muted);}
+.today-bar{display:flex;align-items:center;gap:10px;margin-top:18px;padding:12px 16px;background:var(--pink-dark);border:1px solid var(--pink-border);border-radius:10px;font-size:13px;}
+.today-dot{width:8px;height:8px;border-radius:50%;background:var(--pink);box-shadow:0 0 8px var(--pink-glow);}
 
-  .chip-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; }
-  .chip {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 700;
-  }
-  .chip-pink { background: var(--pink-dark); border: 1px solid var(--pink-border); color: var(--pink); box-shadow: 0 0 16px var(--pink-glow); }
-  .chip-neutral { background: var(--card); border: 1px solid var(--border); color: var(--text-muted); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pink); display: inline-block; }
+/* ---- AGENT ---- */
+.agent-filter{display:flex;gap:8px;padding:14px 20px;border-bottom:1px solid var(--border);}
+.p-pill{background:var(--card);border:1px solid var(--border);color:var(--text-dim);padding:5px 14px;border-radius:999px;font-size:12px;font-weight:800;cursor:pointer;letter-spacing:0.4px;transition:all 0.15s;}
+.p-pill:hover{color:var(--text-muted);}
+.p-pill.p1.active,.p-pill.p1:hover{background:var(--p1-dark);border-color:var(--p1-border);color:var(--p1);box-shadow:0 0 10px var(--p1-glow);}
+.p-pill.p2.active,.p-pill.p2:hover{background:var(--p2-dark);border-color:var(--p2-border);color:var(--p2);}
+.p-pill.p3.active,.p-pill.p3:hover{background:var(--p3-dark);border-color:var(--p3-border);color:var(--p3);}
+.p-pill.all.active{background:rgba(200,48,240,0.1);border-color:var(--pink);color:var(--pink);}
+.agent-layout{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 104px);overflow:hidden;}
+@media(max-width:768px){.agent-layout{grid-template-columns:1fr;height:auto;overflow:visible;}}
+.agent-list-col{overflow-y:auto;border-right:1px solid var(--border);}
+.agent-detail-col{overflow-y:auto;padding:24px;}
+.opp-card{padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.1s;}
+.opp-card:hover{background:var(--card);}
+.opp-card.selected{background:var(--card);border-left:2px solid var(--pink);}
+.opp-title{font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:3px;}
+.opp-company{font-size:12px;color:var(--text-muted);}
+.opp-meta{display:flex;align-items:center;gap:6px;margin-top:6px;}
+.p-chip{display:inline-flex;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:0.4px;}
+.p-chip.p1{background:var(--p1-dark);border:1px solid var(--p1-border);color:var(--p1);}
+.p-chip.p2{background:var(--p2-dark);border:1px solid var(--p2-border);color:var(--p2);}
+.p-chip.p3{background:var(--p3-dark);border:1px solid var(--p3-border);color:var(--p3);}
+.fit-num{font-size:11px;color:var(--text-dim);font-weight:700;}
 
-  .tier-row { display: flex; gap: 16px; margin-bottom: 28px; flex-wrap: wrap; }
-  .tier-card {
-    flex: 1 1 260px; background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-    padding: 20px 22px; display: flex; align-items: center; gap: 16px;
-  }
-  .tier-circle {
-    width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
-  }
-  .tier-circle.magenta { background: radial-gradient(circle at 35% 30%, #F0A0FF, var(--pink)); box-shadow: 0 0 20px var(--pink-glow); }
-  .tier-circle.lavender { background: radial-gradient(circle at 35% 30%, #F0E0FF, var(--lavender)); box-shadow: 0 0 20px rgba(221,176,255,0.35); }
-  .tier-count { font-size: 30px; font-weight: 800; color: var(--text-primary); }
-  .tier-label { font-size: 13px; font-weight: 700; color: var(--lavender); text-transform: uppercase; letter-spacing: 0.4px; }
+.detail-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px;}
+.detail-header{margin-bottom:20px;}
+.detail-priority{margin-bottom:10px;}
+.detail-title{font-size:20px;font-weight:800;margin-bottom:4px;}
+.detail-company{font-size:14px;color:var(--text-muted);margin-bottom:10px;}
+.detail-section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;}
+.detail-section-title{font-size:11px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;}
+.why-text{font-size:13px;color:var(--text-secondary);line-height:1.6;}
+.fit-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.fit-label{font-size:12px;color:var(--text-muted);width:120px;flex-shrink:0;}
+.fit-track{flex:1;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;}
+.fit-fill{height:100%;border-radius:3px;background:var(--gradient-hot);}
+.fit-score{font-size:12px;font-weight:700;color:var(--lavender);width:24px;text-align:right;flex-shrink:0;}
+.action-seq{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.seq-step{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--text-secondary);}
+.seq-num{width:20px;height:20px;border-radius:50%;background:var(--p1-dark);border:1px solid var(--p1-border);color:var(--p1);font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.seq-arrow{color:var(--text-dim);font-size:12px;}
 
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  @media (max-width: 880px) { .two-col { grid-template-columns: 1fr; } }
-  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; }
-  .panel-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 18px; }
+/* ---- EXECUTION STEPS (shared) ---- */
+.exec-step{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--bg);}
+.exec-step-hdr{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.exec-step-num{width:22px;height:22px;border-radius:50%;background:var(--p1-dark);border:1px solid var(--p1-border);color:var(--p1);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.exec-step-lbl{font-size:11px;font-weight:800;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;}
+.exec-person{font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:4px;}
+.exec-email{font-size:12px;color:var(--text-muted);margin-bottom:4px;font-family:"SF Mono",Consolas,monospace;}
+.exec-subject{font-size:11.5px;color:var(--pink);margin-bottom:6px;}
+.draft-box{background:var(--bg);border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.55;white-space:pre-wrap;color:var(--lavender);max-height:200px;overflow-y:auto;margin-bottom:8px;}
+.exec-btns{display:flex;gap:6px;flex-wrap:wrap;}
+.btn-sm{display:inline-flex;align-items:center;justify-content:center;gap:5px;background:var(--card);border:1px solid var(--border);color:var(--text-muted);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;transition:border-color 0.15s,color 0.15s;text-decoration:none;font-family:inherit;}
+.btn-sm:hover{border-color:var(--pink);color:var(--pink);}
+.btn-sm.primary{border-color:var(--purple);color:var(--lavender);}
+.btn-sm.primary:hover{border-color:var(--pink);color:var(--pink);}
 
-  .source-line { margin-bottom: 16px; }
-  .source-line-top { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; }
-  .source-line-top .name { color: var(--text-primary); font-weight: 600; }
-  .source-line-top .count { color: var(--text-primary); font-weight: 700; }
-  .source-bar-track { height: 6px; border-radius: 4px; background: rgba(255,255,255,0.05); overflow: hidden; }
-  .source-bar-fill {
-    height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--purple), var(--pink));
-    width: 0%; animation: growBar 0.9s ease forwards;
-  }
-  @keyframes growBar { to { width: var(--target-width); } }
+/* ---- ACTIONS ---- */
+.actions-wrap{max-width:900px;margin:0 auto;padding:24px 20px 60px;}
+.group-block{margin-bottom:32px;}
+.group-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px;display:flex;align-items:center;gap:10px;}
+.group-title.followup{color:var(--red);}
+.group-title.response{color:var(--green);}
+.group-title.inprogress{color:var(--yellow);}
+.group-title.newactions{color:var(--pink);}
+.group-count{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:800;}
+.group-count.followup{background:var(--red-dark);border:1px solid var(--red-border);color:var(--red);}
+.group-count.response{background:var(--green-dark);border:1px solid var(--green-border);color:var(--green);}
+.group-count.inprogress{background:var(--yellow-dark);border:1px solid var(--yellow-border);color:var(--yellow);}
+.group-count.newactions{background:var(--p1-dark);border:1px solid var(--p1-border);color:var(--p1);}
 
-  .donut-wrap { display: flex; align-items: center; gap: 24px; }
-  .donut {
-    width: 130px; height: 130px; border-radius: 50%; flex-shrink: 0;
-    background: conic-gradient(var(--pink) 0deg 0deg, var(--purple) 0deg 0deg, var(--text-dim) 0deg 360deg);
-    position: relative;
-  }
-  .donut::after {
-    content: ""; position: absolute; inset: 18px; border-radius: 50%; background: var(--card);
-  }
-  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
-  .legend-swatch { width: 10px; height: 10px; border-radius: 3px; }
-  .divider { height: 1px; background: var(--border); margin: 18px 0; }
-  .drafts-big { font-size: 34px; font-weight: 800; color: var(--pink); }
-  .drafts-small { font-size: 13px; color: var(--text-muted); }
+.action-card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;}
+.action-card-hdr{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;}
+.action-card-hdr:hover{background:var(--card-hover);}
+.action-card-body{display:none;border-top:1px solid var(--border);padding:16px;}
+.action-card.open .action-card-body{display:block;}
+.action-title-wrap{flex:1;min-width:0;}
+.action-title{font-size:14px;font-weight:700;color:var(--text-primary);}
+.action-company{font-size:12px;color:var(--text-muted);}
+.action-toggle{color:var(--text-dim);font-size:12px;flex-shrink:0;transition:transform 0.15s;}
+.action-card.open .action-toggle{transform:rotate(180deg);}
 
-  /* ---------- ACTIONS TAB ---------- */
-  .summary-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
-  .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
-  .summary-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 8px; }
-  .summary-card .value { font-size: 26px; font-weight: 800; }
-  .summary-card.total .value { color: var(--text-primary); -webkit-text-fill-color: unset; }
-  .summary-card.sent .value { color: var(--pink); }
-  .summary-card.replied .value { color: var(--purple); }
-  .summary-card.interview .value { color: var(--lavender); }
+.pk-inline{background:var(--lavender-dark);border:1px solid var(--lavender-border);border-radius:10px;padding:14px;margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.pk-inline input{background:var(--bg);border:1px solid var(--border);color:var(--text-primary);padding:7px 12px;border-radius:8px;font-size:13px;outline:none;flex:1;min-width:160px;}
+.pk-inline input:focus{border-color:var(--pink);}
+.pk-inline-label{font-size:12px;color:var(--lavender);font-weight:700;}
 
-  .filter-row { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
-  .filter-pill {
-    background: var(--card); border: 1px solid var(--border); color: var(--text-muted);
-    padding: 7px 16px; border-radius: 999px; font-size: 13px; font-weight: 700; cursor: pointer;
-  }
-  .filter-pill:hover { color: var(--text-primary); }
-  .filter-pill.active { background: var(--pink-dark); border-color: var(--pink); color: var(--pink); box-shadow: 0 0 14px var(--pink-glow); }
+/* ---- PIPELINE ---- */
+.pipeline-wrap{max-width:900px;margin:0 auto;padding:24px 20px 60px;}
+.funnel-track{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:32px;}
+.funnel-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 16px;}
+.funnel-val{font-size:34px;font-weight:900;line-height:1;color:var(--lavender);}
+.funnel-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-top:6px;}
+.funnel-rate{font-size:12px;color:var(--text-dim);margin-top:3px;}
+.funnel-arrow{color:var(--text-dim);font-size:22px;align-self:center;display:none;}
+@media(min-width:600px){.funnel-track{grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;}.funnel-arrow{display:block;}}
 
-  .section-block { margin-bottom: 30px; }
-  .section-label {
-    display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding-left: 12px;
-    border-left: 3px solid var(--text-dim);
-  }
-  .section-label.act-now { border-left-color: var(--pink); }
-  .section-label.review { border-left-color: var(--lavender); }
-  .section-label.earlier { border-left-color: rgba(200,48,240,0.3); }
-  .section-block.today-email .job-row {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--pink);
-  }
-  .section-block.today-email .section-label { border-left-color: var(--pink); }
-  .section-block.today-email .section-title { color: var(--pink); }
-  .section-block.today-email .section-count-badge { background: var(--pink-dark); color: var(--pink); border: 1px solid var(--pink-border); }
+.section-hdr{font-size:12px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;}
+.source-table{width:100%;border-collapse:collapse;}
+.source-table th{text-align:left;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px;padding:8px 12px;border-bottom:1px solid var(--border);}
+.source-table td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;}
+.source-table td.name{color:var(--text-primary);font-weight:700;}
+.source-table td.num{font-family:"SF Mono",Consolas,monospace;color:var(--text-secondary);}
+.src-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:24px;}
 
-  .section-block.today-noemail .job-row {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--purple);
-  }
-  .section-block.today-noemail .section-label { border-left-color: var(--purple); }
-  .section-block.today-noemail .section-title { color: var(--lavender); }
-  .section-block.today-noemail .section-count-badge { background: var(--lavender-dark); color: var(--lavender); border: 1px solid var(--lavender-border); }
+/* ---- KPI tab inline gate ---- */
+.kpi-gate-wrap{display:flex;align-items:center;justify-content:center;padding:80px 20px;}
+.kpi-gate-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:36px;max-width:360px;width:100%;text-align:center;}
+.kpi-gate-title{font-size:20px;font-weight:800;margin-bottom:6px;}
+.kpi-gate-sub{font-size:13px;color:var(--text-muted);margin-bottom:24px;}
+.kpi-gate-input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-primary);font-size:15px;padding:11px 14px;border-radius:10px;outline:none;margin-bottom:12px;}
+.kpi-gate-input:focus{border-color:var(--pink);}
+.kpi-gate-btn{width:100%;background:var(--gradient-hot);color:#fff;border:none;font-size:14px;font-weight:800;padding:12px;border-radius:10px;cursor:pointer;}
+.kpi-gate-btn:hover{opacity:0.9;}
+.kpi-gate-err{font-size:12px;color:var(--red);margin-top:8px;}
+.kpi-wrap{max-width:960px;margin:0 auto;padding:24px 20px 60px;}
+.kpi-logout{float:right;background:none;border:1px solid var(--border);color:var(--text-muted);font-size:12px;padding:5px 12px;border-radius:999px;cursor:pointer;margin-bottom:16px;}
+.kpi-logout:hover{border-color:var(--pink);color:var(--pink);}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:24px;}
+.metric-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 14px;}
+.metric-val{font-size:28px;font-weight:900;line-height:1;}
+.metric-lbl{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:5px;}
+.metric-card.pink .metric-val{color:var(--pink);}
+.metric-card.lav .metric-val{color:var(--lavender);}
+.metric-card.green .metric-val{color:var(--green);}
+.metric-card.yellow .metric-val{color:var(--yellow);}
+.kpi-section-title{font-size:12px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;}
+.conv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-bottom:28px;}
+.conv-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+.conv-rate{font-size:24px;font-weight:900;color:var(--lavender);}
+.conv-lbl{font-size:11.5px;color:var(--text-muted);margin-top:4px;}
+.conv-null{font-size:18px;font-weight:700;color:var(--text-dim);}
+.att-block{background:var(--red-dark);border:1px solid var(--red-border);border-radius:12px;padding:14px 16px;margin-bottom:20px;}
+.att-title{font-size:12px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:10px;}
+.att-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(240,64,96,0.1);}
+.att-row:last-child{border-bottom:none;}
+.att-company{font-size:13px;font-weight:700;min-width:130px;}
+.att-title-text{font-size:12px;color:var(--text-muted);flex:1;}
+.pipe-search{width:100%;background:var(--card);border:1px solid var(--border);color:var(--text-primary);font-size:13px;padding:9px 13px;border-radius:10px;outline:none;margin-bottom:12px;}
+.pipe-search:focus{border-color:var(--pink);}
+.pipe-job{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:13px 15px;margin-bottom:8px;}
+.pipe-job-top{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
+.pipe-job-title{font-size:14px;font-weight:800;flex:1;min-width:160px;}
+.pipe-job-co{font-size:12px;color:var(--text-muted);}
+.state-badge{display:inline-flex;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:0.4px;white-space:nowrap;}
+.s-OFFER{background:#1A1400;border:1px solid #504000;color:#F0C040;}
+.s-INTERVIEW{background:var(--p1-dark);border:1px solid var(--p1-border);color:var(--p1);box-shadow:0 0 8px var(--p1-glow);}
+.s-CONVERSATION,.s-RESPONDED{background:var(--green-dark);border:1px solid var(--green-border);color:var(--green);}
+.s-REJECTED{background:var(--red-dark);border:1px solid var(--red-border);color:var(--red);}
+.s-FOLLOW-UP\ DUE{background:var(--red-dark);border:1px solid var(--red-border);color:var(--red);animation:pulseRed 2s infinite;}
+@keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(240,64,96,0)}50%{box-shadow:0 0 0 4px rgba(240,64,96,0.2)}}
+.s-NO\ RESPONSE{background:rgba(60,20,30,0.5);border:1px solid var(--red-border);color:#A04060;}
+.s-WAITING{background:var(--yellow-dark);border:1px solid var(--yellow-border);color:var(--yellow);}
+.s-APPLICATION\ SENT{background:var(--lavender-dark);border:1px solid var(--lavender-border);color:var(--lavender);}
+.s-NOT\ STARTED{background:transparent;border:1px solid var(--border);color:var(--text-dim);}
+.event-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+.event-btn{font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;transition:all 0.15s;white-space:nowrap;}
+.event-btn:hover{border-color:var(--pink);color:var(--pink);}
+.event-btn.active{border-color:var(--green);color:var(--green);background:var(--green-dark);}
+.event-btn.active.neg{border-color:var(--red);color:var(--red);background:var(--red-dark);}
+.event-btn.active.gold{border-color:#F0C040;color:#F0C040;background:#1A1400;}
+.event-btn.due{border-color:var(--red);color:var(--red);animation:pulseRed 2s infinite;}
 
-  .section-block.earlier-email .job-row {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--purple);
-    opacity: 0.85;
-  }
-  .section-block.earlier-email .section-label { border-left-color: var(--purple); }
-  .section-block.earlier-email .section-title { color: var(--purple); }
-  .section-block.earlier-email .section-count-badge { background: var(--card); color: var(--purple); border: 1px solid var(--border); }
-
-  .section-block.earlier-noemail .job-row {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--text-dim);
-    opacity: 0.5;
-  }
-  .section-block.earlier-noemail .section-label { border-left-color: var(--text-dim); }
-  .section-block.earlier-noemail .section-title { color: var(--text-muted); }
-  .section-block.earlier-noemail .section-count-badge { background: var(--card); color: var(--text-muted); border: 1px solid var(--border); }
-  .section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-primary); }
-  .section-meta { font-size: 12.5px; color: var(--text-muted); }
-  .section-count-badge {
-    margin-left: auto; font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px;
-    background: var(--card); color: var(--text-muted);
-  }
-  .section-count-badge.act-now { background: var(--pink-dark); color: var(--pink); }
-  .section-count-badge.review { background: var(--lavender-dark); color: var(--lavender); }
-
-  .job-row {
-    background: var(--card); border: 1px solid var(--border); border-left: 3px solid transparent;
-    border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
-  }
-  .job-row:hover { background: var(--card-hover); }
-  .job-row.status-sent { border-left-color: var(--pink); background: rgba(200,48,240,0.05); }
-  .job-row.status-replied { border-left-color: var(--purple); background: rgba(128,96,192,0.07); }
-  .job-row.status-interview { border-left-color: var(--lavender); background: rgba(221,176,255,0.06); }
-  .job-row.status-skip { border-left-color: var(--text-dim); opacity: 0.55; }
-
-  .job-top { display: flex; align-items: center; gap: 10px; }
-  .job-title { font-size: 15px; font-weight: 700; color: var(--text-primary); flex: 1; }
-  .status-pill {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800;
-    padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.15);
-    background: rgba(255,255,255,0.06); color: var(--text-primary); cursor: pointer; white-space: nowrap;
-  }
-  .status-pill.sent { background: var(--pink-dark); border-color: var(--pink-border); color: var(--pink); }
-  .status-pill.replied { background: rgba(128,96,192,0.18); border-color: var(--purple); color: var(--lavender); }
-  .status-pill.interview { background: var(--lavender-dark); border-color: var(--lavender-border); color: var(--lavender); }
-  .status-pill.skip { background: rgba(80,80,96,0.2); border-color: var(--text-dim); color: var(--text-muted); }
-  .pulse-dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--pink); display: inline-block;
-    animation: pulse 1.4s infinite ease-in-out;
-  }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-
-  .exp-badge { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
-  .exp-badge.tier1 { background: var(--pink-dark); border: 1px solid var(--pink-border); color: var(--pink); box-shadow: 0 0 10px var(--pink-glow); }
-  .exp-badge.tier2 { background: var(--lavender-dark); border: 1px solid var(--lavender-border); color: var(--lavender); }
-
-  .job-bottom { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding-left: 2px; flex-wrap: wrap; }
-  .job-company { font-weight: 700; color: var(--text-primary); font-size: 13.5px; }
-  .location-pill {
-    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
-    background: var(--pink-dark); border: 1px solid var(--pink-border); color: var(--pink);
-    padding: 3px 10px; border-radius: 999px; box-shadow: 0 0 10px var(--pink-glow);
-  }
-  .job-bottom-right { margin-left: auto; }
-  .contact-chip {
-    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700;
-    padding: 4px 11px; border-radius: 999px;
-  }
-  .contact-chip.email { background: var(--pink-dark); border: 1px solid var(--pink-border); color: var(--pink); box-shadow: 0 0 10px var(--pink-glow); }
-  .contact-chip.linkedin { background: var(--lavender-dark); border: 1px solid var(--lavender-border); color: var(--lavender); }
-  .contact-chip.none { background: rgba(80,80,96,0.18); color: var(--text-dim); }
-
-  .draft-panel {
-    max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
-  }
-  .draft-panel.open { max-height: 400px; margin-top: 12px; }
-  .draft-box {
-    background: var(--bg); border-radius: 6px;
-    padding: 12px; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap;
-    color: var(--lavender); max-height: 260px; overflow-y: auto; margin-bottom: 8px;
-  }
-  .job-action-btn {
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-    background: var(--card); border: 1px solid var(--purple); color: var(--lavender);
-    border-radius: 8px; height: 44px; box-sizing: border-box; font-family: inherit;
-    font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: none;
-    transition: border-color 0.2s;
-  }
-  .job-action-btn:hover { border-color: var(--pink); }
-  .job-action-btn.active { border-color: var(--pink); color: var(--pink); }
-  .job-action-btn.muted { border-color: var(--border); color: var(--text-muted); }
-  .job-action-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
-
-  .empty-note, .loading-note { color: var(--text-muted); padding: 30px 0; text-align: center; }
-
-  /* ---------- PIPELINE TAB ---------- */
-  .ring-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
-  @media (max-width: 880px) { .ring-row { grid-template-columns: repeat(2, 1fr); } }
-  .ring-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; text-align: center; }
-  .ring-svg-wrap { position: relative; width: 120px; height: 120px; margin: 0 auto 12px auto; }
-  .ring-number { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 800; }
-  .ring-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-primary); }
-  .ring-desc { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
-
-  .goal-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; margin-bottom: 28px; }
-  .goal-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
-  .goal-label { font-size: 13px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
-  .goal-counter { font-size: 22px; font-weight: 800; color: var(--pink); }
-  .goal-track { height: 12px; border-radius: 8px; background: rgba(255,255,255,0.06); overflow: hidden; }
-  .goal-fill {
-    height: 100%; border-radius: 8px; background: linear-gradient(90deg, var(--purple), var(--pink));
-    box-shadow: 0 0 14px var(--pink-glow);
-    transition: width 0.5s ease;
-  }
-
-  .perf-table { width: 100%; border-collapse: collapse; }
-  .perf-table th { text-align: left; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  .perf-table td { padding: 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
-  .perf-table td.name { color: var(--text-primary); font-weight: 700; }
-  .perf-table td.num { font-family: "SF Mono", Consolas, monospace; color: var(--text-secondary); }
-
-  .dropdown-row {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-  .dropdown-wrap select {
-    appearance: none;
-    background: var(--card);
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    font-size: 13px;
-    font-weight: 700;
-    padding: 8px 36px 8px 14px;
-    border-radius: 999px;
-    cursor: pointer;
-    outline: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23B0B0B0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 14px center;
-    transition: border-color 0.15s ease;
-  }
-  .dropdown-wrap select:hover {
-    border-color: var(--pink);
-    color: var(--pink);
-  }
-  .dropdown-wrap select option {
-    background: var(--card);
-    color: var(--text-primary);
-  }
-
-  /* ---------- ATTACK PLAN (Layer 5) ---------- */
-  .attack-badge {
-    display: inline-flex; align-items: center;
-    padding: 3px 10px; border-radius: 999px;
-    font-size: 10px; font-weight: 800;
-    letter-spacing: 0.5px; white-space: nowrap;
-    cursor: default; pointer-events: none;
-  }
-  .attack-badge.p1 { background: var(--pink-dark); border: 1px solid var(--pink-border); color: var(--pink); box-shadow: 0 0 8px var(--pink-glow); }
-  .attack-badge.p2 { background: var(--lavender-dark); border: 1px solid var(--lavender-border); color: var(--lavender); }
-  .attack-badge.p3 { background: rgba(80,80,96,0.18); border: 1px solid var(--border); color: var(--text-muted); }
-  .exec-step {
-    border: 1px solid var(--border);
-    border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
-    background: var(--bg);
-  }
-  .exec-step-header {
-    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
-  }
-  .exec-step-num {
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--pink-dark); border: 1px solid var(--pink-border);
-    color: var(--pink); font-size: 11px; font-weight: 800;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  }
-  .exec-step-label { font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
-  .exec-person { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
-  .exec-email-addr { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; font-family: "SF Mono", Consolas, monospace; }
-  .exec-subject { font-size: 11.5px; color: var(--pink); margin-bottom: 6px; }
-  .exec-link { font-size: 12.5px; font-weight: 700; color: var(--lavender); text-decoration: none; display: inline-flex; align-items: center; margin-bottom: 6px; }
-  .exec-link:hover { color: var(--pink); }
-  .exec-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.loading{text-align:center;padding:50px 20px;color:var(--text-dim);font-size:13px;}
+.empty{text-align:center;padding:30px 20px;color:var(--text-dim);font-size:13px;}
 </style>
 </head>
 <body>
 
-<header>
-  <h1>RoleReach</h1>
+<header class="site-header">
+  <div class="logo">RoleReach</div>
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="home">HOME</button>
+    <button class="tab-btn" data-tab="agent">AGENT</button>
+    <button class="tab-btn" data-tab="actions">ACTIONS</button>
+    <button class="tab-btn" data-tab="pipeline">PIPELINE</button>
+    <button class="tab-btn" data-tab="kpi">KPIs &#128274;</button>
+  </nav>
 </header>
 
-<div class="tabs">
-  <button class="tab-btn active" data-tab="agent">Agent</button>
-  <button class="tab-btn" data-tab="actions">Actions</button>
-  <button class="tab-btn" data-tab="pipeline">Pipeline</button>
-</div>
-
-<main>
-
-  <section id="tab-agent" class="tab-content active">
-    <div id="agent-hero"></div>
-    <div class="chip-row" id="agent-chips"></div>
-    <div class="tier-row" id="agent-tiers"></div>
-    <div class="two-col">
-      <div class="panel">
-        <div class="panel-title">Jobs by source</div>
-        <div id="agent-sources"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-title">Contact resolution</div>
-        <div id="agent-donut"></div>
-        <div class="divider"></div>
-        <div id="agent-drafts"></div>
-      </div>
+<!-- HOME -->
+<section id="tab-home" class="tab-content active">
+  <div class="home-wrap">
+    <div class="home-hero">
+      <h1>RoleReach is working.</h1>
+      <p>Your personal PM hiring agent — discovering, scoring, and attacking opportunities around the clock.</p>
     </div>
-  </section>
-
-  <section id="tab-actions" class="tab-content">
-    <div class="summary-strip" id="actions-summary"></div>
-    <div class="filter-row" id="filter-row"></div>
-    <div class="dropdown-row">
-      <div class="dropdown-wrap">
-        <select id="location-select" onchange="currentLocation = this.value; loadJobs()">
-          <option value="All">📍 All Cities</option>
-          <option value="Bangalore">Bangalore</option>
-          <option value="Hyderabad">Hyderabad</option>
-          <option value="Remote">Remote</option>
-          <option value="PanIndia">Pan India</option>
-        </select>
+    <div id="home-stats" class="stat-grid"><div class="loading">Loading…</div></div>
+    <div class="journey-section">
+      <div class="journey-label">HOW IT WORKS — 7-STAGE PIPELINE</div>
+      <div class="journey-stages">
+        <div class="journey-stage"><div class="stage-num">1</div><div class="stage-name">DISCOVER</div><div class="stage-desc">Scan 8 job boards every morning: Cutshort, Google Jobs, iimjobs, Internshala, YC, HN, JSearch, Direct Careers</div></div>
+        <div class="journey-stage"><div class="stage-num">2</div><div class="stage-name">SCREEN</div><div class="stage-desc">Eligibility gate: experience range, title match, role type — ELIGIBLE / REVIEW / REJECT</div></div>
+        <div class="journey-stage"><div class="stage-num">3</div><div class="stage-name">SCORE</div><div class="stage-desc">Fit Assessment across 5 dimensions: role · experience · skill · portfolio · domain (0–10 each)</div></div>
+        <div class="journey-stage"><div class="stage-num">4</div><div class="stage-name">RANK</div><div class="stage-desc">Priority Engine: Fit × 0.6 + Freshness × 0.25 + Contact Access × 0.15 → P1 / P2 / P3</div></div>
+        <div class="journey-stage"><div class="stage-num">5</div><div class="stage-name">PLAN</div><div class="stage-desc">Attack Route: P1 DEEP (LinkedIn + Email + Apply) · P2 STANDARD · P3 LIGHT</div></div>
+        <div class="journey-stage"><div class="stage-num">6</div><div class="stage-name">EXECUTE</div><div class="stage-desc">Execution Packet: LinkedIn DM + personalised email draft generated in your voice, ready to copy</div></div>
+        <div class="journey-stage"><div class="stage-num">7</div><div class="stage-name">PIPELINE</div><div class="stage-desc">Follow-up tracking: Applied → Sent → Follow-up Due → Response → Conversation → Interview → Offer</div></div>
       </div>
-      <div class="dropdown-wrap">
-        <select id="time-select" onchange="currentTime = this.value; loadJobs()">
-          <option value="All">🕐 All Time</option>
-          <option value="Week">Past Week</option>
-          <option value="Fresh">Today Only</option>
-          <option value="Earlier">Earlier</option>
-        </select>
-      </div>
+      <div id="home-today" class="today-bar"><div class="today-dot"></div><span id="home-today-text" style="font-size:13px;color:var(--text-secondary);">Loading today's update…</span></div>
     </div>
-    <div id="job-sections"><div class="loading-note">Loading jobs…</div></div>
-  </section>
+  </div>
+</section>
 
-  <section id="tab-pipeline" class="tab-content">
-    <div class="ring-row" id="pipeline-rings"></div>
-    <div class="goal-card" id="pipeline-goal"></div>
-    <div class="panel">
-      <div class="panel-title">Source performance</div>
-      <table class="perf-table">
-        <thead><tr><th>Source</th><th>Seen</th><th>Sent</th><th>Replies</th></tr></thead>
-        <tbody id="perf-tbody"></tbody>
+<!-- AGENT -->
+<section id="tab-agent" class="tab-content">
+  <div class="agent-filter" id="agent-filter">
+    <button class="p-pill all active" data-p="ALL">ALL</button>
+    <button class="p-pill p1" data-p="P1">P1 DEEP</button>
+    <button class="p-pill p2" data-p="P2">P2 STANDARD</button>
+    <button class="p-pill p3" data-p="P3">P3 LIGHT</button>
+  </div>
+  <div class="agent-layout">
+    <div class="agent-list-col" id="agent-list"><div class="loading">Loading opportunities…</div></div>
+    <div class="agent-detail-col" id="agent-detail"><div class="detail-empty">Select a job to see the full attack plan.</div></div>
+  </div>
+</section>
+
+<!-- ACTIONS -->
+<section id="tab-actions" class="tab-content">
+  <div class="actions-wrap" id="actions-container"><div class="loading">Loading…</div></div>
+</section>
+
+<!-- PIPELINE -->
+<section id="tab-pipeline" class="tab-content">
+  <div class="pipeline-wrap">
+    <div class="section-hdr">Discovery Funnel</div>
+    <div id="pipeline-funnel" class="funnel-track"><div class="loading">Loading…</div></div>
+    <div class="src-panel">
+      <div class="section-hdr">Eligible Jobs by Source</div>
+      <table class="source-table">
+        <thead><tr><th>Source</th><th>Eligible</th></tr></thead>
+        <tbody id="pipeline-sources"></tbody>
       </table>
     </div>
-  </section>
+  </div>
+</section>
 
-</main>
+<!-- KPIs -->
+<section id="tab-kpi" class="tab-content">
+  <div id="kpi-gate-wrap" class="kpi-gate-wrap">
+    <div class="kpi-gate-card">
+      <div class="kpi-gate-title">Private Dashboard</div>
+      <div class="kpi-gate-sub">Pipeline, KPIs &amp; outreach data</div>
+      <input id="kpi-pk" class="kpi-gate-input" type="password" placeholder="Enter passkey"
+        onkeydown="if(event.key==='Enter')kpiUnlock()">
+      <button class="kpi-gate-btn" onclick="kpiUnlock()">Unlock</button>
+      <div id="kpi-err" class="kpi-gate-err"></div>
+    </div>
+  </div>
+  <div id="kpi-content" style="display:none;">
+    <div class="kpi-wrap">
+      <button class="kpi-logout" onclick="kpiLock()">Lock</button>
+      <div class="kpi-section-title" style="margin-bottom:12px;">Outreach</div>
+      <div id="kpi-metrics" class="metrics-grid"></div>
+      <div class="kpi-section-title">Conversion Funnel</div>
+      <div id="kpi-conv" class="conv-grid"></div>
+      <div id="kpi-att"></div>
+      <div class="kpi-section-title" style="margin-top:4px;">Pipeline</div>
+      <input id="kpi-search" class="pipe-search" type="text" placeholder="Filter by title or company…" oninput="renderKpiList()">
+      <div id="kpi-list"></div>
+    </div>
+  </div>
+</section>
 
 <script>
-const FILTERS = ["All", "Sent", "Replied", "Interview", "Skip"];
-let currentFilter = "All";
-let currentLocation = "All";
-let currentTime = "All";
-let cachedJobs = null;
-let isLoadingJobs = false;
+// ---- State ----
+let summaryData = null;
+let oppsData = null;
+let selectedJobId = null;
+let agentFilter = 'ALL';
+let kpiPasskey = '';
+let kpiData = null;
+let actionsLoaded = false;
 
-const FILTER_EMPTY_MESSAGES = {
-  "Sent": "No emails sent yet. Mark jobs as Sent to track here.",
-  "Replied": "No replies yet. Keep sending.",
-  "Interview": "No interviews yet. They're coming.",
-};
-
-const STATUS_ICON = { "NEW": "&#9679;", "Sent": "&#10003;", "Replied": "&#8617;", "Interview": "&#9733;", "Skip": "&#10005;" };
-const STATUS_NEXT = { "NEW": "Sent", "Sent": "Replied", "Replied": "Interview", "Interview": "Skip", "Skip": "NEW" };
-
-function escapeHtml(str) {
-  if (!str) return "";
-  return str.replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+// ---- Utilities ----
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
-function switchTab(name) {
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
-  document.querySelectorAll(".tab-content").forEach(s => s.classList.toggle("active", s.id === "tab-" + name));
-  if (name === "agent") loadAgent();
-  if (name === "actions") loadJobs();
-  if (name === "pipeline") loadPipeline();
+function fmtDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString('en-IN',{day:'numeric',month:'short'}); } catch(e){return '';}
 }
-document.querySelectorAll(".tab-btn").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
-
-// ---------- AGENT ----------
-
-async function loadAgent() {
-  const res = await fetch("/api/agent");
-  const d = await res.json();
-
-  document.getElementById("agent-hero").innerHTML = `
-    <div class="hero-row">
-      <div class="hero-number mono" style="background: linear-gradient(90deg, #FFFFFF, var(--pink)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">${d.new_today}</div>
-      <div class="hero-caption">new roles today</div>
-    </div>
-    <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:24px; margin-top:-4px; background:var(--card); border:1px solid var(--border); padding:5px 14px; border-radius:999px;">
-      <span style="width:6px; height:6px; border-radius:50%; background:var(--gradient-hot); display:inline-block;"></span>
-      <span style="font-size:12px; font-weight:700; color:var(--text-muted); letter-spacing:0.4px;">${d.jobs_count} total in pipeline</span>
-    </div>`;
-
-  document.getElementById("agent-chips").innerHTML = `
-    <span class="chip chip-pink"><span class="dot"></span>${d.new_today} new roles scraped today</span>
-    <span class="chip chip-neutral">Runs daily at ${d.runs_daily_at}</span>`;
-
-  document.getElementById("agent-tiers").innerHTML = `
-    <div class="tier-card">
-      <div class="tier-circle magenta"></div>
-      <div><div class="tier-count">${d.tier1.count}</div><div class="tier-label">${d.tier1.label}</div></div>
-    </div>
-    <div class="tier-card">
-      <div class="tier-circle lavender"></div>
-      <div><div class="tier-count">${d.tier2.count}</div><div class="tier-label">${d.tier2.label}</div></div>
-    </div>`;
-
-  const maxCount = Math.max(1, ...d.sources.map(s => s.count));
-  document.getElementById("agent-sources").innerHTML = d.sources.map((s, i) => `
-    <div class="source-line">
-      <div class="source-line-top"><span class="name">${escapeHtml(s.name)}</span><span class="count mono">${s.count}</span></div>
-      <div class="source-bar-track"><div class="source-bar-fill" style="--target-width:${Math.round(100*s.count/maxCount)}%; animation-delay:${i*0.1}s"></div></div>
-    </div>`).join("");
-
-  const c = d.contact;
-  const total = Math.max(1, c.named_email + c.linkedin_only + c.no_contact);
-  const p1 = 360 * c.named_email / total;
-  const p2 = p1 + 360 * c.linkedin_only / total;
-  document.getElementById("agent-donut").innerHTML = `
-    <div class="donut-wrap">
-      <div class="donut" style="background: conic-gradient(var(--pink) 0deg ${p1}deg, var(--purple) ${p1}deg ${p2}deg, var(--text-dim) ${p2}deg 360deg);"></div>
-      <div>
-        <div class="legend-item"><span class="legend-swatch" style="background:var(--pink)"></span>Named email &mdash; ${c.named_email}</div>
-        <div class="legend-item"><span class="legend-swatch" style="background:var(--purple)"></span>LinkedIn only &mdash; ${c.linkedin_only}</div>
-        <div class="legend-item"><span class="legend-swatch" style="background:var(--text-dim)"></span>No contact &mdash; ${c.no_contact}</div>
-      </div>
-    </div>`;
-
-  document.getElementById("agent-drafts").innerHTML = `
-    <div class="drafts-big">${d.drafts_ready}</div>
-    <div class="drafts-small">cold email drafts ready in your voice</div>`;
-}
-
-// ---------- ACTIONS ----------
-
-function renderFilterRow() {
-  document.getElementById("filter-row").innerHTML = FILTERS.map(f =>
-    `<button class="filter-pill ${f === currentFilter ? 'active' : ''}" data-filter="${f}">${f}</button>`
-  ).join("");
-  document.querySelectorAll(".filter-pill").forEach(p => {
-    p.addEventListener("click", () => { currentFilter = p.dataset.filter; renderFilterRow(); loadJobs(); });
-  });
-}
-
-// Defensive client-side override on top of the server-computed tier (get_job_tier
-// in Python) — catches an explicit senior-experience requirement that slipped
-// through tier classification. Only job.title and job.experience are available
-// on the client (the API never sends a raw description), so that's what's checked.
-const SENIOR_BADGE_PATTERNS = [
-  { pattern: "3-5", label: "3-5yr" },
-  { pattern: "4-6", label: "3-5yr" },
-  { pattern: "5-7", label: "5+yr" },
-  { pattern: "5-8", label: "5+yr" },
-  { pattern: "6-8", label: "5+yr" },
-  { pattern: "6-9", label: "5+yr" },
-  { pattern: "7-9", label: "5+yr" },
-  { pattern: "7-10", label: "5+yr" },
-  { pattern: "8-10", label: "5+yr" },
-  { pattern: "3+", label: "3-5yr" },
-  { pattern: "4+", label: "3-5yr" },
-  { pattern: "5+", label: "5+yr" },
-  { pattern: "6+", label: "5+yr" },
-  { pattern: "7+", label: "5+yr" },
-  { pattern: "8+", label: "5+yr" },
-  { pattern: "minimum 3", label: "3-5yr" },
-  { pattern: "minimum 4", label: "3-5yr" },
-  { pattern: "minimum 5", label: "5+yr" },
-  { pattern: "at least 3", label: "3-5yr" },
-  { pattern: "at least 4", label: "3-5yr" },
-  { pattern: "at least 5", label: "5+yr" },
-];
-
-function detectSeniorBadgeOverride(job) {
-  const haystack = `${job.title || ""} ${job.experience || ""}`.toLowerCase();
-  for (const { pattern, label } of SENIOR_BADGE_PATTERNS) {
-    if (haystack.includes(pattern)) {
-      return label;
-    }
-  }
-  return null;
-}
-
-const ICON_LINKEDIN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>';
-const ICON_EMAIL = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7 10-7"/></svg>';
-const ICON_DM = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
-
-function copyFromId(elementId, btn) {
-  const el = document.getElementById(elementId);
-  if (!el) return;
-  const text = el.textContent;
+function getSavedPk() { try{return sessionStorage.getItem('rr_pk')||'';}catch(e){return '';} }
+function savePk(pk) { try{sessionStorage.setItem('rr_pk',pk);}catch(e){} }
+function copyText(text, btn, label) {
   const orig = btn.textContent;
-  navigator.clipboard.writeText(text).then(() => {
-    btn.textContent = "Copied!";
-    btn.style.color = "var(--pink)";
-    setTimeout(() => { btn.textContent = orig; btn.style.color = ""; }, 1800);
-  }).catch(() => {
-    const ta = document.createElement("textarea");
-    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
-    btn.textContent = "Copied!";
-    setTimeout(() => { btn.textContent = orig; }, 1800);
+  const doIt = () => { btn.textContent = 'Copied!'; btn.style.color='var(--green)'; setTimeout(()=>{btn.textContent=label||orig;btn.style.color='';},1800); };
+  navigator.clipboard.writeText(text).then(doIt).catch(()=>{
+    const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); doIt();
   });
 }
 
-function toggleAttackPlan(jobId) {
-  const panel = document.getElementById("draft-panel-" + jobId);
-  if (!panel) return;
-  if (panel.classList.contains("open")) {
-    panel.classList.remove("open");
-  } else {
-    panel.classList.add("open");
+// ---- Tab switching ----
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
+  document.querySelectorAll('.tab-content').forEach(s=>s.classList.toggle('active',s.id==='tab-'+name));
+  if (name==='home') loadHome();
+  if (name==='agent') loadAgent();
+  if (name==='actions') loadActions();
+  if (name==='pipeline') loadPipeline();
+  if (name==='kpi') initKpi();
+}
+document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+
+// ---- HOME ----
+async function loadHome() {
+  if (!summaryData) {
+    try { const r=await fetch('/api/summary'); summaryData=await r.json(); } catch(e) { document.getElementById('home-stats').innerHTML='<div class="empty">Could not load stats.</div>'; return; }
+  }
+  const d = summaryData;
+  document.getElementById('home-stats').innerHTML = [
+    {v:d.discovered,l:'Discovered',cls:'dim'},
+    {v:d.eligible,l:'Eligible',cls:'lav'},
+    {v:d.prioritized,l:'Prioritized',cls:'pink'},
+    {v:d.attacks_ready,l:'Attacks Ready',cls:'green'},
+    {v:d.p1,l:'P1 — DEEP',cls:'pink'},
+    {v:d.p2,l:'P2 — STANDARD',cls:'lav'},
+    {v:d.contacts_found,l:'Contacts Found',cls:'green'},
+    {v:d.new_today,l:'New Today',cls:'dim'},
+  ].map(c=>`<div class="stat-card ${c.cls}"><div class="stat-val mono">${c.v??'–'}</div><div class="stat-label">${c.l}</div></div>`).join('');
+  const lr = d.last_run ? ' · Last updated ' + fmtDate(d.last_run) : '';
+  document.getElementById('home-today-text').textContent = `${d.new_today||0} new roles found today${lr}`;
+}
+
+// ---- AGENT ----
+async function loadAgent() {
+  if (!oppsData) {
+    try { const r=await fetch('/api/opportunities'); oppsData=await r.json(); } catch(e) { document.getElementById('agent-list').innerHTML='<div class="empty">Could not load.</div>'; return; }
+  }
+  renderAgentList();
+  if (selectedJobId) {
+    const j = oppsData.find(j=>j.job_id===selectedJobId);
+    if (j) renderJobDetail(j);
   }
 }
 
+function renderAgentList() {
+  if (!oppsData) return;
+  const filtered = agentFilter==='ALL' ? oppsData : oppsData.filter(j=>j.attack_priority===agentFilter);
+  if (!filtered.length) {
+    document.getElementById('agent-list').innerHTML='<div class="empty">No opportunities match this filter.</div>';
+    return;
+  }
+  document.getElementById('agent-list').innerHTML = filtered.map(j => {
+    const p = (j.attack_priority||'').toLowerCase();
+    const fit = j.overall_fit != null ? `<span class="fit-num">${j.overall_fit}/10</span>` : '';
+    return `<div class="opp-card${j.job_id===selectedJobId?' selected':''}" onclick="selectJob('${esc(j.job_id)}')">
+      <div class="opp-title">${esc(j.title)}</div>
+      <div class="opp-company">${esc(j.company)}</div>
+      <div class="opp-meta">
+        <span class="p-chip ${p}">${esc(j.attack_priority)}</span>
+        ${j.attack_intensity ? `<span style="font-size:10px;color:var(--text-dim);">${esc(j.attack_intensity)}</span>` : ''}
+        ${fit}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectJob(id) {
+  selectedJobId = id;
+  const j = oppsData && oppsData.find(j=>j.job_id===id);
+  if (!j) return;
+  renderAgentList();
+  renderJobDetail(j);
+}
+
+function renderJobDetail(j) {
+  const p = (j.attack_priority||'').toLowerCase();
+  let execHtml = '';
+  let execPkt = null;
+  if (j.execution_packet) { try { execPkt = JSON.parse(j.execution_packet); } catch(e){} }
+
+  let seqHtml = '';
+  if (j.attack_action_sequence) {
+    let seq = j.attack_action_sequence;
+    if (typeof seq === 'string') { try { seq = JSON.parse(seq); } catch(e){ seq=[]; } }
+    if (Array.isArray(seq) && seq.length) {
+      seqHtml = seq.map((s,i) =>
+        `${i>0?'<span class="seq-arrow">→</span>':''}
+        <span class="seq-step"><span class="seq-num">${i+1}</span>${esc(s)}</span>`
+      ).join('');
+    }
+  }
+
+  let fitHtml = '';
+  const dims = [
+    {key:'role_fit',label:'Role Fit'},{key:'experience_fit',label:'Exp Fit'},
+    {key:'skill_fit',label:'Skill Fit'},{key:'portfolio_fit',label:'Portfolio'},
+    {key:'domain_fit',label:'Domain Fit'},
+  ];
+  const hasFit = dims.some(d=>j[d.key]!=null);
+  if (hasFit) {
+    fitHtml = `<div class="detail-section">
+      <div class="detail-section-title">Fit Assessment</div>
+      ${dims.map(d=>j[d.key]!=null?`<div class="fit-row">
+        <span class="fit-label">${d.label}</span>
+        <div class="fit-track"><div class="fit-fill" style="width:${(j[d.key]/10)*100}%"></div></div>
+        <span class="fit-score">${j[d.key]}</span>
+      </div>`:'').join('')}
+    </div>`;
+  }
+
+  if (execPkt && execPkt.steps && execPkt.steps.length) {
+    execHtml = `<div class="detail-section">
+      <div class="detail-section-title">Execution Plan${seqHtml?'<span style="float:right;display:flex;gap:4px;align-items:center;">'+seqHtml+'</span>':''}</div>
+      ${execPkt.steps.map(s=>renderExecStep(j.job_id,s,j)).join('')}
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn-sm primary" style="flex:1;" onclick="markSentFromAgent('${esc(j.job_id)}', this)">Mark as Sent</button>
+      </div>
+    </div>`;
+  } else {
+    execHtml = `<div class="detail-section">
+      <div class="detail-section-title">Execution Plan</div>
+      <div class="empty" style="padding:16px 0;">No execution packet built yet — run the pipeline to generate it.</div>
+    </div>`;
+  }
+
+  document.getElementById('agent-detail').innerHTML = `
+    <div class="detail-priority"><span class="p-chip ${p}">${esc(j.attack_priority)}</span>${j.attack_intensity?` <span style="font-size:11px;color:var(--text-dim);margin-left:6px;">${esc(j.attack_intensity)}</span>`:''}</div>
+    <div class="detail-title">${esc(j.title)}</div>
+    <div class="detail-company">${esc(j.company)}${j.location?' · '+esc(j.location):''}</div>
+    <div style="margin-bottom:16px;">
+      ${j.url?`<a href="${esc(j.url)}" target="_blank" class="btn-sm">View Posting ↗</a> `:''}
+      ${j.company_linkedin?`<a href="${esc(j.company_linkedin)}" target="_blank" class="btn-sm">LinkedIn ↗</a>`:''}
+      ${j.hm_email?`<a href="mailto:${esc(j.hm_email)}" class="btn-sm">${esc(j.hm_email)}</a>`:''}
+    </div>
+    ${j.attack_reason||j.eligibility_reason?`<div class="detail-section">
+      <div class="detail-section-title">Why This Job</div>
+      <div class="why-text">${esc(j.attack_reason||j.eligibility_reason)}</div>
+    </div>`:''}
+    ${fitHtml}
+    ${execHtml}
+  `;
+}
+
+// ---- Agent filter pills ----
+document.querySelectorAll('.p-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    agentFilter = btn.dataset.p;
+    document.querySelectorAll('.p-pill').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedJobId = null;
+    renderAgentList();
+    document.getElementById('agent-detail').innerHTML='<div class="detail-empty">Select a job to see the full attack plan.</div>';
+  });
+});
+
+async function markSentFromAgent(jobId, btn) {
+  const pk = kpiPasskey || getSavedPk();
+  if (!pk) {
+    const entered = prompt('Enter passkey to log this event:');
+    if (!entered) return;
+    kpiPasskey = entered;
+    savePk(entered);
+  }
+  btn.disabled = true;
+  btn.textContent = 'Logging…';
+  try {
+    const res = await fetch('/api/pipeline/log', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+(kpiPasskey||getSavedPk()),'Content-Type':'application/json'},
+      body: JSON.stringify({job_id:jobId,event_type:'email_sent',action:'set',noted_at:new Date().toISOString()}),
+    });
+    if (res.status===401) { btn.textContent='Wrong passkey'; btn.disabled=false; kpiPasskey=''; return; }
+    if (res.ok) { btn.textContent='Logged!'; btn.style.color='var(--green)'; }
+    else { const e=await res.json().catch(()=>({})); btn.textContent='Error: '+(e.error||res.status); }
+  } catch(e) { btn.textContent='Network error'; }
+  setTimeout(()=>{btn.disabled=false;btn.textContent='Mark as Sent';btn.style.color='';},2500);
+}
+
+// ---- EXECUTION STEP RENDERER (shared) ----
 function renderExecStep(jobId, step, job) {
-  const num = step.step || 1;
-  const type = step.type || "none";
-  const label = step.label || type;
+  const num = step.step||1, type = step.type||'none', label = step.label||type;
   const sid = `${jobId}-${num}`;
-  let body = "";
-
-  if (type === "linkedin") {
-    const personName = step.person_name || "";
-    const personRole = step.person_role || "";
-    const linkedinUrl = step.linkedin_url || "";
-    const draft = step.draft || (job && job.linkedin_draft) || "";
-    const personLine = [personName, personRole].filter(Boolean).join(" · ");
-    body = (personLine ? `<div class="exec-person">${escapeHtml(personLine)}</div>` : "")
-      + (linkedinUrl ? `<a href="${escapeHtml(linkedinUrl)}" target="_blank" class="exec-link" onclick="event.stopPropagation()">Open LinkedIn ↗</a><br>` : "")
-      + (draft ? `<pre id="exec-d-${sid}" style="display:none">${escapeHtml(draft)}</pre><div class="draft-box" style="margin-top:6px;">${escapeHtml(draft)}</div><div class="exec-actions"><button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyFromId('exec-d-${sid}', this)"><span>Copy DM</span></button></div>` : "");
-  } else if (type === "email") {
-    const email = step.recipient_email || "";
-    const subj = step.subject || "";
-    const draft = step.draft || "";
-    body = (email ? `<div class="exec-email-addr">${escapeHtml(email)}</div>` : "")
-      + (subj ? `<div class="exec-subject">Subject: ${escapeHtml(subj)}</div>` : "")
-      + (draft ? `<pre id="exec-d-${sid}" style="display:none">${escapeHtml(draft)}</pre>`
-                + `<pre id="exec-s-${sid}" style="display:none">${escapeHtml(subj)}</pre>`
-                + `<pre id="exec-e-${sid}" style="display:none">${escapeHtml(email)}</pre>`
-                + `<div class="draft-box" style="margin-top:6px;">${escapeHtml(draft)}</div>`
-                + `<div class="exec-actions">`
-                + (subj ? `<button class="job-action-btn" onclick="event.stopPropagation(); copyFromId('exec-s-${sid}', this)"><span>Copy Subject</span></button>` : "")
-                + (email ? `<button class="job-action-btn" onclick="event.stopPropagation(); copyFromId('exec-e-${sid}', this)"><span>Copy Email</span></button>` : "")
-                + `<button class="job-action-btn" onclick="event.stopPropagation(); copyFromId('exec-d-${sid}', this)"><span>Copy Body</span></button></div>` : "");
-  } else if (type === "email_unattributed") {
-    const email = step.recipient_email || "";
-    const note = step.note || "Unattributed email — apply directly or locate the hiring contact.";
-    body = (email ? `<div class="exec-email-addr">${escapeHtml(email)}</div>` : "")
-      + `<div style="font-size:11.5px; color:var(--text-muted); margin-top:4px;">${escapeHtml(note)}</div>`;
-  } else if (type === "apply") {
-    const url = step.url || "";
-    body = url
-      ? `<a href="${escapeHtml(url)}" target="_blank" class="job-action-btn" style="display:inline-flex; text-decoration:none; margin-top:4px;" onclick="event.stopPropagation()"><span>OPEN ↗</span></a>`
-      : `<div style="font-size:12px; color:var(--text-muted);">No application link available.</div>`;
+  let body = '';
+  if (type==='linkedin') {
+    const pl=[step.person_name,step.person_role].filter(Boolean).join(' · ');
+    const draft=step.draft||(job&&job.linkedin_draft)||'';
+    body=(pl?`<div class="exec-person">${esc(pl)}</div>`:'')
+      +(step.linkedin_url?`<a href="${esc(step.linkedin_url)}" target="_blank" class="btn-sm" style="margin-bottom:6px;display:inline-flex;" onclick="event.stopPropagation()">Open LinkedIn ↗</a><br>`:'')
+      +(draft?`<pre id="xd-${sid}" style="display:none">${esc(draft)}</pre><div class="draft-box">${esc(draft)}</div><div class="exec-btns"><button class="btn-sm primary" onclick="event.stopPropagation();copyText(document.getElementById('xd-${sid}').textContent,this,'Copy DM')">Copy DM</button></div>`:'');
+  } else if (type==='email'||type==='email_unattributed') {
+    const email=step.recipient_email||'', subj=step.subject||'', draft=step.draft||'';
+    const note=step.note||'';
+    body=(email?`<div class="exec-email">${esc(email)}</div>`:'')
+      +(subj?`<div class="exec-subject">Subject: ${esc(subj)}</div>`:'')
+      +(draft?`<pre id="xd-${sid}" style="display:none">${esc(draft)}</pre>`
+            +`<pre id="xs-${sid}" style="display:none">${esc(subj)}</pre>`
+            +`<pre id="xe-${sid}" style="display:none">${esc(email)}</pre>`
+            +`<div class="draft-box">${esc(draft)}</div>`
+            +`<div class="exec-btns">`
+            +(subj?`<button class="btn-sm" onclick="event.stopPropagation();copyText(document.getElementById('xs-${sid}').textContent,this,'Copy Subj')">Copy Subject</button>`:'')
+            +(email?`<button class="btn-sm" onclick="event.stopPropagation();copyText(document.getElementById('xe-${sid}').textContent,this,'Copy Email')">Copy Email</button>`:'')
+            +`<button class="btn-sm primary" onclick="event.stopPropagation();copyText(document.getElementById('xd-${sid}').textContent,this,'Copy Body')">Copy Body</button></div>`
+          :(note?`<div style="font-size:11.5px;color:var(--text-muted);">${esc(note)}</div>`:''));
+  } else if (type==='apply') {
+    body=step.url?`<a href="${esc(step.url)}" target="_blank" class="btn-sm primary" onclick="event.stopPropagation()">Open Application ↗</a>`
+                :`<div style="font-size:12px;color:var(--text-muted);">No application link available.</div>`;
   } else {
-    body = `<div style="font-size:12px; color:var(--text-muted);">${escapeHtml(label)}</div>`;
+    body=`<div style="font-size:12px;color:var(--text-muted);">${esc(label)}</div>`;
   }
-
-  return `<div class="exec-step"><div class="exec-step-header"><span class="exec-step-num">${num}</span><span class="exec-step-label">${escapeHtml(label)}</span></div><div>${body}</div></div>`;
+  return `<div class="exec-step"><div class="exec-step-hdr"><span class="exec-step-num">${num}</span><span class="exec-step-lbl">${esc(label)}</span></div><div>${body}</div></div>`;
 }
 
-function jobRowHtml(job, isEarlier = false) {
-  const statusKey = job.status.toLowerCase();
-  const seniorOverride = detectSeniorBadgeOverride(job);
-  const expBadge = seniorOverride
-    ? `<span class="exp-badge tier2">${seniorOverride}</span>`
-    : job.tier === 1
-      ? '<span class="exp-badge tier1">0-1yr / Fresher</span>'
-      : '<span class="exp-badge tier2">1-3yr</span>';
-
-  const statusPillClass = statusKey === "new" ? "" : statusKey;
-  const pillContent = job.status === "NEW"
-    ? (isEarlier ? "" : `<span class="pulse-dot"></span>NEW`)
-    : `${STATUS_ICON[job.status]} ${job.status}`;
-
-  const statusPillHtml = pillContent
-    ? `<span class="status-pill ${statusPillClass}" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')">${pillContent}</span>`
-    : "";
-
-  let contactChip = '<span class="contact-chip none">No contact</span>';
-  if (job.hm_email) {
-    contactChip = `<span style="display:inline-flex; align-items:center; gap:6px;">
-  <a href="mailto:${escapeHtml(job.hm_email)}" class="contact-chip email" onclick="event.stopPropagation()">&#9993; ${escapeHtml(job.hm_email)}</a>
-  <button onclick="event.stopPropagation(); copyEmail('${escapeHtml(job.hm_email)}', this)" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:13px; padding:2px 4px; border-radius:4px;" title="Copy email">&#10697;</button>
-</span>`;
+// ---- ACTIONS ----
+async function loadActions() {
+  const wrap = document.getElementById('actions-container');
+  if (!oppsData) {
+    wrap.innerHTML='<div class="loading">Loading…</div>';
+    try { const r=await fetch('/api/opportunities'); oppsData=await r.json(); } catch(e){ wrap.innerHTML='<div class="empty">Could not load.</div>'; return; }
   }
-  if (job.company_linkedin) {
-    contactChip += `<a href="${escapeHtml(job.company_linkedin)}" target="_blank" class="contact-chip linkedin" onclick="event.stopPropagation()">&#8599; LinkedIn</a>`;
-  }
-  if (!job.hm_email && !job.company_linkedin) {
-    contactChip = '<span class="contact-chip none">No contact</span>';
-  }
-
-  // ---------- ROW 1: View Job + Product Team ----------
-  const jobSearchUrl = escapeHtml(linkedInJobSearchUrl(job.title, job.company));
-  const viewJobUrl = job.url && job.url.includes("linkedin.com") ? escapeHtml(job.url) : jobSearchUrl;
-  const peopleSearchUrl = escapeHtml(linkedInSearchUrl(job.company));
-
-  const row1 = `<div style="display:flex; gap:8px;">
-    <a href="${viewJobUrl}" target="_blank" onclick="event.stopPropagation()" class="job-action-btn" style="flex:1;">${ICON_LINKEDIN}<span>View Job</span></a>
-    <a href="${peopleSearchUrl}" target="_blank" onclick="event.stopPropagation()" class="job-action-btn" style="flex:1;">${ICON_LINKEDIN}<span>Product Team</span></a>
-  </div>`;
-
-  // ---------- Attack badge ----------
-  const attackBadgeHtml = job.attack_priority
-    ? `<span class="attack-badge ${job.attack_priority.toLowerCase()}">${escapeHtml(job.attack_priority)}${job.attack_intensity ? " — " + escapeHtml(job.attack_intensity) : ""}</span>`
-    : "";
-
-  // ---------- ROW 2 + DRAFT PANEL: execution plan (Layer 5) or legacy tabs ----------
-  let execPacket = null;
-  if (job.execution_packet) {
-    try { execPacket = JSON.parse(job.execution_packet); } catch(e) {}
-  }
-
-  let row2, draftPanel;
-
-  if (execPacket && execPacket.steps && execPacket.steps.length) {
-    // ---------- EXECUTION PLAN ----------
-    const ap = execPacket.attack_priority || "—";
-    const ai = execPacket.attack_intensity || "";
-    const apClass = ap.toLowerCase();
-
-    row2 = `<div style="margin-top:8px;">
-      <button class="job-action-btn" id="attack-plan-btn-${job.job_id}"
-        style="width:100%; display:flex; align-items:center; gap:10px;"
-        onclick="event.stopPropagation(); toggleAttackPlan('${job.job_id}')">
-        <span class="attack-badge ${apClass}" style="pointer-events:none;">${escapeHtml(ap)}${ai ? " — " + escapeHtml(ai) : ""}</span>
-        <span style="flex:1; text-align:left; font-size:11.5px; font-weight:700; color:var(--text-secondary);">Attack Plan</span>
-        <span style="font-size:11px; color:var(--text-muted);">▼</span>
-      </button>
-    </div>`;
-
-    let stepsHtml = "";
-    for (const step of execPacket.steps) {
-      stepsHtml += renderExecStep(job.job_id, step, job);
-    }
-
-    draftPanel = `<div class="draft-panel" id="draft-panel-${job.job_id}">
-      <div style="margin-top:8px;">
-        ${stepsHtml}
-        <div style="display:flex; gap:8px; margin-top:4px;">
-          <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
-          <button class="job-action-btn muted" style="flex:1;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
-        </div>
-      </div>
-    </div>`;
-
-  } else {
-    // ---------- LEGACY: Email Draft / LinkedIn DM tabs ----------
-    row2 = `<div style="display:flex; gap:8px; margin-top:8px;">
-      <button id="tab-email-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'email')">${ICON_EMAIL}<span>Email Draft</span></button>
-      <button id="tab-dm-${job.job_id}" class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); selectDraftTab('${job.job_id}', 'dm')">${ICON_DM}<span>LinkedIn DM</span></button>
-    </div>`;
-
-    const hasRealDraft = !!job.email_draft;
-    let subjectLine, copySubject, bodyText;
-    if (hasRealDraft) {
-      const lines = job.email_draft.split('\n');
-      subjectLine = lines.find(l => l.startsWith('Subject:')) || 'Subject: Diagnosed. Fixed. Shipped. Applying for APM.';
-      copySubject = cleanSubjectForCopy(subjectLine);
-      const bodyLines = lines.filter(l => !l.startsWith('Subject:'));
-      bodyText = bodyLines.join('\n').trim();
-    } else {
-      subjectLine = "Subject: Diagnosed. Fixed. Shipped. Applying for APM.";
-      copySubject = cleanSubjectForCopy(subjectLine);
-      bodyText = `Hi there,\n\nI noticed something specific about ${job.company || "[Company]"}'s product worth paying attention to.\n\nI'm applying for the ${job.title || "[Role]"} role. I come from a design background and have been building in product — activation flows, user reachability, documented tradeoffs. Not just thinking. Actually shipping.\n\nPortfolio: https://kriti-portfolio-pm.vercel.app/\nCV attached.\n\nWarmly,\nKriti`;
-    }
-
-    const emailContent = `<div id="draft-content-email-${job.job_id}" style="display:none;">
-      <div style="font-size:12px; font-weight:700; color:var(--pink); margin-bottom:8px;">${escapeHtml(subjectLine)}</div>
-      <div class="draft-box" id="draft-${job.job_id}">${escapeHtml(bodyText)}</div>
-      <div style="display:flex; gap:8px;">
-        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyTextInline('${escapeHtml(copySubject)}', this)"><span>Copy Subject</span></button>
-        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); copyEmail('${escapeHtml(job.hm_email || "")}', this)"><span>Copy Email</span></button>
-        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
-      </div>
-      <button class="job-action-btn muted" style="width:100%; margin-top:8px;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
-    </div>`;
-
-    const dmText = dmTemplate(job);
-    const dmContent = `<div id="draft-content-dm-${job.job_id}" style="display:none;">
-      <div class="draft-box">${escapeHtml(dmText)}</div>
-      <button class="job-action-btn" style="width:100%;" onclick="event.stopPropagation(); copyDM('${job.job_id}', this)"><span>Copy DM</span></button>
-      <div style="display:flex; gap:8px; margin-top:8px;">
-        <button class="job-action-btn" style="flex:1;" onclick="event.stopPropagation(); cycleStatus('${job.job_id}', '${job.status}')"><span>${job.status === 'NEW' ? 'Mark Sent' : job.status}</span></button>
-        <button class="job-action-btn muted" style="flex:1;" onclick="event.stopPropagation(); closeJob('${job.job_id}')"><span>Close</span></button>
-      </div>
-    </div>`;
-
-    draftPanel = `<div class="draft-panel" id="draft-panel-${job.job_id}" data-active-tab="">
-      ${emailContent}
-      ${dmContent}
-    </div>`;
-  }
-
-  return `<div class="job-row status-${statusKey}" id="job-${job.job_id}">
-    <div class="job-top">
-      ${statusPillHtml}
-      <span class="job-title">${escapeHtml(job.title)}</span>
-      ${expBadge}
-    </div>
-    <div class="job-bottom">
-      <span class="job-company">${escapeHtml(job.company)}</span>
-      <span class="location-pill">&#128205; ${escapeHtml(job.location)}</span>
-      ${attackBadgeHtml}
-      <span class="job-bottom-right">${contactChip}</span>
-    </div>
-    <div style="margin-top:10px;">
-      ${row1}
-      ${row2}
-    </div>
-    ${draftPanel}
-  </div>`;
-}
-
-function sectionHtml(key, title, meta, jobs, cls, emptyMessage = "", isEarlier = false, isMuted = false) {
-  const muteStyle = isMuted ? 'style="opacity:0.5"' : '';
-  if (jobs.length === 0) {
-    if (!emptyMessage) return "";
-    return `<div class="section-block" ${muteStyle}>
-      <div class="section-label ${cls}">
-        <span class="section-title">${title}</span>
-        <span class="section-meta">${meta}</span>
-      </div>
-      <div class="empty-note">${emptyMessage}</div>
-    </div>`;
-  }
-  return `<div class="section-block" ${muteStyle}>
-    <div class="section-label ${cls}">
-      <span class="section-title">${title}</span>
-      <span class="section-meta">${meta}</span>
-      <span class="section-count-badge ${cls}">${jobs.length}</span>
-    </div>
-    ${jobs.map(j => jobRowHtml(j, isEarlier)).join("")}
-  </div>`;
-}
-
-async function loadJobs() {
-  if (isLoadingJobs) return;
-
-  const container = document.getElementById("job-sections");
-
-  if (!cachedJobs) {
-    isLoadingJobs = true;
-    container.innerHTML = '<div class="loading-note">Loading jobs…</div>';
+  // Try to load pipeline state if passkey available
+  const pk = kpiPasskey || getSavedPk();
+  let pipeState = null;
+  if (pk && !kpiData) {
     try {
-      const res = await fetch("/api/jobs?status=All");
-      cachedJobs = await res.json();
-    } catch(e) {
-      container.innerHTML = '<div class="empty-note">Failed to load jobs. Refresh the page.</div>';
-      isLoadingJobs = false;
+      const r=await fetch('/api/pipeline/state',{headers:{'Authorization':'Bearer '+pk}});
+      if (r.ok) { kpiData=await r.json(); kpiPasskey=pk; }
+    } catch(e){}
+  }
+  if (kpiData) pipeState = kpiData;
+  renderActions(pipeState);
+}
+
+function renderActions(pipeState) {
+  const wrap = document.getElementById('actions-container');
+  const opps = oppsData || [];
+
+  // Build pipeline state lookup
+  const stateMap = {};
+  const followupDue = [];
+  const inprogress = [];
+  const responses = [];
+  if (pipeState) {
+    for (const j of pipeState.jobs) {
+      stateMap[j.job_id] = j;
+      if (j.followup_due) followupDue.push(j);
+      else if (['RESPONDED','CONVERSATION','INTERVIEW','OFFER'].includes(j.state)) responses.push(j);
+      else if (['WAITING','FOLLOW-UP DUE','NO RESPONSE'].includes(j.state)) inprogress.push(j);
+    }
+  }
+
+  // NEW ACTIONS: opps with execution packet not yet in pipeline
+  const newActions = opps.filter(j => {
+    if (!j.execution_packet) return false;
+    if (!pipeState) return true;
+    const s = stateMap[j.job_id];
+    return !s || s.state === 'NOT STARTED';
+  });
+
+  let html = '';
+
+  if (!pipeState) {
+    html += `<div style="background:var(--lavender-dark);border:1px solid var(--lavender-border);border-radius:10px;padding:14px;margin-bottom:24px;font-size:13px;color:var(--lavender);">
+      Unlock KPIs to see your pipeline groups (responses, follow-ups, in progress). New actions are shown below.
+    </div>`;
+  }
+
+  if (responses.length) {
+    html += `<div class="group-block"><div class="group-title response">Responses <span class="group-count response">${responses.length}</span></div>
+      ${responses.map(j=>actionCardHtml(j,null,'response')).join('')}</div>`;
+  }
+  if (followupDue.length) {
+    html += `<div class="group-block"><div class="group-title followup">Follow-ups Due <span class="group-count followup">${followupDue.length}</span></div>
+      ${followupDue.map(j=>actionCardHtml(j,null,'followup')).join('')}</div>`;
+  }
+  if (inprogress.length) {
+    html += `<div class="group-block"><div class="group-title inprogress">Attacks in Progress <span class="group-count inprogress">${inprogress.length}</span></div>
+      ${inprogress.map(j=>actionCardHtml(j,null,'inprogress')).join('')}</div>`;
+  }
+  if (newActions.length) {
+    html += `<div class="group-block"><div class="group-title newactions">New Actions <span class="group-count newactions">${newActions.length}</span></div>
+      ${newActions.map(j=>actionCardHtml(null,j,'newactions')).join('')}</div>`;
+  }
+  if (!html) html = '<div class="empty">No actions to show. Run the pipeline to generate execution packets.</div>';
+
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.action-card-hdr').forEach(hdr => {
+    hdr.addEventListener('click', ()=>hdr.closest('.action-card').classList.toggle('open'));
+  });
+}
+
+function actionCardHtml(pipeJob, oppJob, cls) {
+  const j = oppJob || (oppsData && oppsData.find(o=>o.job_id===(pipeJob&&pipeJob.job_id))) || pipeJob;
+  if (!j) return '';
+  const title = j.title||pipeJob&&pipeJob.title||'';
+  const company = j.company||pipeJob&&pipeJob.company||'';
+  const jid = j.job_id;
+  let bodyHtml = '';
+  let execPkt = null;
+  if (j.execution_packet) { try{execPkt=JSON.parse(j.execution_packet);}catch(e){} }
+  if (execPkt && execPkt.steps) {
+    bodyHtml = execPkt.steps.map(s=>renderExecStep(jid,s,j)).join('');
+    bodyHtml += `<div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn-sm primary" style="flex:1;" onclick="logActionEvent('${esc(jid)}','email_sent',this)">Mark Email Sent</button>
+      <button class="btn-sm" style="flex:1;" onclick="logActionEvent('${esc(jid)}','linkedin_sent',this)">Mark LinkedIn Sent</button>
+    </div>`;
+  } else if (pipeJob) {
+    const stateClass = 's-'+((pipeJob.state||'NOT STARTED').replace(/\s/g,'\\ '));
+    bodyHtml = `<span class="state-badge ${stateClass}">${esc(pipeJob.state)}</span>`;
+  } else {
+    bodyHtml = '<div class="empty" style="padding:10px 0;">No execution packet — run pipeline.</div>';
+  }
+  return `<div class="action-card" id="ac-${jid}">
+    <div class="action-card-hdr">
+      <div class="action-title-wrap">
+        <div class="action-title">${esc(title)}</div>
+        <div class="action-company">${esc(company)}</div>
+      </div>
+      ${j.attack_priority?`<span class="p-chip ${(j.attack_priority||'').toLowerCase()}">${esc(j.attack_priority)}</span>`:''}
+      <span class="action-toggle">▼</span>
+    </div>
+    <div class="action-card-body">${bodyHtml}</div>
+  </div>`;
+}
+
+async function logActionEvent(jobId, eventType, btn) {
+  let pk = kpiPasskey || getSavedPk();
+  if (!pk) {
+    pk = prompt('Enter passkey to log this event:');
+    if (!pk) return;
+    kpiPasskey = pk; savePk(pk);
+  }
+  btn.disabled = true; btn.textContent = 'Logging…';
+  try {
+    const res = await fetch('/api/pipeline/log', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+pk,'Content-Type':'application/json'},
+      body: JSON.stringify({job_id:jobId,event_type:eventType,action:'set',noted_at:new Date().toISOString()}),
+    });
+    if (res.status===401){btn.textContent='Wrong passkey';kpiPasskey='';btn.disabled=false;return;}
+    if (res.ok){btn.textContent='Logged!';btn.style.color='var(--green)';kpiData=null;}
+    else{const e=await res.json().catch(()=>({}));btn.textContent='Error: '+(e.error||res.status);}
+  } catch(e){btn.textContent='Network error';}
+  setTimeout(()=>{btn.disabled=false;btn.textContent=eventType==='email_sent'?'Mark Email Sent':'Mark LinkedIn Sent';btn.style.color='';},2500);
+}
+
+// ---- PIPELINE ----
+async function loadPipeline() {
+  if (!summaryData) {
+    try{const r=await fetch('/api/summary');summaryData=await r.json();}catch(e){document.getElementById('pipeline-funnel').innerHTML='<div class="empty">Could not load.</div>';return;}
+  }
+  const d = summaryData;
+  const stages = [
+    {v:d.discovered,l:'Discovered',r:''},
+    {v:d.eligible,l:'Eligible',r:d.discovered?Math.round(d.eligible/d.discovered*100)+'%':'—'},
+    {v:d.prioritized,l:'Prioritized',r:d.eligible?Math.round(d.prioritized/d.eligible*100)+'%':'—'},
+    {v:d.attacks_ready,l:'Attacks Ready',r:d.prioritized?Math.round(d.attacks_ready/d.prioritized*100)+'%':'—'},
+  ];
+  document.getElementById('pipeline-funnel').innerHTML = stages.map((s,i) =>
+    `${i>0?'<div class="funnel-arrow">→</div>':''}
+    <div class="funnel-card">
+      <div class="funnel-val mono">${s.v??'–'}</div>
+      <div class="funnel-label">${s.l}</div>
+      ${s.r?`<div class="funnel-rate">${s.r} of previous</div>`:''}
+    </div>`
+  ).join('');
+
+  const srcs = d.sources||{};
+  const srcLabels = {hackernews:'Hacker News',cutshort:'Cutshort',iimjobs:'iimjobs',google_jobs:'Google Jobs',internshala:'Internshala',jsearch:'JSearch',yc:'YC Jobs',careers:'Direct Careers'};
+  const srcEntries = Object.entries(srcs).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('pipeline-sources').innerHTML = srcEntries.length
+    ? srcEntries.map(([src,cnt])=>`<tr><td class="name">${esc(srcLabels[src]||src)}</td><td class="num">${cnt}</td></tr>`).join('')
+    : '<tr><td colspan="2" class="empty" style="text-align:center;">No eligible jobs yet.</td></tr>';
+}
+
+// ---- KPI ----
+function initKpi() {
+  const pk = kpiPasskey || getSavedPk();
+  if (pk) { kpiPasskey=pk; loadKpiData(); }
+  else {
+    document.getElementById('kpi-gate-wrap').style.display='flex';
+    document.getElementById('kpi-content').style.display='none';
+  }
+}
+
+async function kpiUnlock() {
+  const val = document.getElementById('kpi-pk').value.trim();
+  if (!val) {document.getElementById('kpi-err').textContent='Enter a passkey.';return;}
+  kpiPasskey = val;
+  await loadKpiData(true);
+}
+
+async function loadKpiData(fromUnlock=false) {
+  try {
+    const res = await fetch('/api/pipeline/state',{headers:{'Authorization':'Bearer '+kpiPasskey}});
+    if (res.status===401) {
+      if (fromUnlock) document.getElementById('kpi-err').textContent='Wrong passkey.';
+      kpiPasskey='';
       return;
     }
-    isLoadingJobs = false;
-  }
-
-  const allJobs = cachedJobs;
-
-  const seen = new Set();
-  const dedupedJobs = allJobs.filter(j => {
-    const key = (j.title + '|' + j.company).toLowerCase().trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  const total = dedupedJobs.length;
-  const sent = dedupedJobs.filter(j => ["Sent","Replied","Interview"].includes(j.status)).length;
-  const replied = dedupedJobs.filter(j => ["Replied","Interview"].includes(j.status)).length;
-  const interview = dedupedJobs.filter(j => j.status === "Interview").length;
-
-  document.getElementById("actions-summary").innerHTML = `
-    <div class="summary-card total"><div class="label">Total</div><div class="value">${total}</div></div>
-    <div class="summary-card sent"><div class="label">Sent</div><div class="value">${sent}</div></div>
-    <div class="summary-card replied"><div class="label">Replied</div><div class="value">${replied}</div></div>
-    <div class="summary-card interview"><div class="label">Interview</div><div class="value">${interview}</div></div>`;
-
-  let jobs = dedupedJobs;
-
-  if (currentFilter !== "All") {
-    jobs = jobs.filter(j => j.status === currentFilter);
-  }
-
-  if (currentLocation !== "All") {
-    jobs = jobs.filter(j => {
-      const loc = (j.location || "").toLowerCase();
-      if (currentLocation === "Remote") return loc.includes("remote");
-      if (currentLocation === "PanIndia") return loc.includes("india") || loc.includes("pan india") || loc.includes("anywhere");
-      return loc.includes(currentLocation.toLowerCase());
-    });
-  }
-
-  if (jobs.length === 0) {
-    const msg = FILTER_EMPTY_MESSAGES[currentFilter] || "No jobs match this filter.";
-    container.innerHTML = `<div class="empty-note">${msg}</div>`;
-    return;
-  }
-
-  const isThisWeek = (j) => {
-    if (!j.posted_at) return false;
-    const raw = j.posted_at.toLowerCase().trim();
-    const hoursMatch = raw.match(/(\d+)\s+hour/);
-    if (hoursMatch) return true;
-    if (raw.includes("today") || raw.includes("just now") || raw.includes("minute")) return true;
-    const daysMatch = raw.match(/(\d+)\s+day/);
-    if (daysMatch) return parseInt(daysMatch[1]) <= 7;
-    if (raw.includes("week") || raw.includes("month") || raw.includes("30+")) return false;
-    const parsed = new Date(j.posted_at);
-    if (isNaN(parsed)) return true;
-    return parsed >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  };
-
-  const isToday = (j) => {
-    if (!j.posted_at) return false;
-    const raw = j.posted_at.toLowerCase().trim();
-    if (raw.includes("hour") || raw.includes("today") || raw.includes("just now") || raw.includes("minute")) return true;
-    const daysMatch = raw.match(/(\d+)\s+day/);
-    if (daysMatch) return parseInt(daysMatch[1]) < 1;
-    return false;
-  };
-
-  const freshFilter = (j) => currentTime === "Fresh" ? isToday(j) : isThisWeek(j);
-
-  const todayWithEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && j.hm_email);
-  const todayNoEmail = jobs.filter(j => j.status === "NEW" && freshFilter(j) && !j.hm_email && j.group === "no_contact");
-  const earlierWithEmail = jobs.filter(j => j.status === "NEW" && !isThisWeek(j) && j.hm_email);
-  const earlierNoEmail = jobs.filter(j => j.status === "NEW" && !isThisWeek(j) && !j.hm_email && j.group === "no_contact");
-  const review = jobs.filter(j => j.group === "review" && j.status === "NEW");
-  const alreadyActioned = jobs.filter(j => j.status !== "NEW");
-
-  const showFresh = currentTime !== "Earlier";
-  const showEarlier = currentTime !== "Fresh" && currentTime !== "Week";
-
-  const freshLabel = "Past week";
-
-  container.innerHTML =
-    (showFresh && todayWithEmail.length ? `<div class="section-block today-email">${sectionHtml("today_email", "Today — With Email", freshLabel + " · draft ready to send", todayWithEmail, "act-now")}</div>` : "") +
-    (showFresh && todayNoEmail.length ? `<div class="section-block today-noemail">${sectionHtml("today_noemail", "Today — No Email Found", freshLabel + " · visit posting to apply directly", todayNoEmail, "")}</div>` : "") +
-    (showFresh && !todayWithEmail.length && !todayNoEmail.length ? '<div class="empty-note">No new roles today yet. Check back after 8 AM.</div>' : "") +
-    (showEarlier && earlierWithEmail.length ? `<div class="section-block earlier-email">${sectionHtml("earlier_email", "Earlier — With Email", "Older roles · draft ready", earlierWithEmail, "act-now", "", true)}</div>` : "") +
-    (showEarlier && earlierNoEmail.length ? `<div class="section-block earlier-noemail">${sectionHtml("earlier_noemail", "Earlier — No Contact", "Older roles · nothing to action", earlierNoEmail, "", "", true)}</div>` : "") +
-    (review.length ? sectionHtml("review", "LinkedIn Found", "No direct email · reach out on LinkedIn", review, "review") : "") +
-    (alreadyActioned.length ? `<div style="opacity:0.45; margin-top:24px;">${sectionHtml("applied", "Already Applied", "Sent, replied, or skipped", alreadyActioned, "act-now")}</div>` : "");
+    kpiData = await res.json();
+    savePk(kpiPasskey);
+    document.getElementById('kpi-gate-wrap').style.display='none';
+    document.getElementById('kpi-content').style.display='block';
+    renderKpiMetrics(kpiData.metrics);
+    renderKpiConv(kpiData.metrics);
+    renderKpiAtt(kpiData.jobs);
+    renderKpiList();
+  } catch(e) { if (fromUnlock) document.getElementById('kpi-err').textContent='Connection failed.'; }
 }
 
-async function cycleStatus(jobId, currentStatus) {
-  const nextStatus = STATUS_NEXT[currentStatus] || "NEW";
-  const res = await fetch("/api/action", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({job_id: jobId, status: nextStatus, timestamp: new Date().toISOString()}),
-  });
-  if (!res.ok) return;
-  cachedJobs = null;
-  loadJobs();
+function kpiLock() {
+  kpiPasskey=''; kpiData=null;
+  try{sessionStorage.removeItem('rr_pk');}catch(e){}
+  document.getElementById('kpi-gate-wrap').style.display='flex';
+  document.getElementById('kpi-content').style.display='none';
+  document.getElementById('kpi-pk').value='';
 }
 
-function selectDraftTab(jobId, tab) {
-  const panel = document.getElementById("draft-panel-" + jobId);
-  const emailBtn = document.getElementById("tab-email-" + jobId);
-  const dmBtn = document.getElementById("tab-dm-" + jobId);
-  const emailContent = document.getElementById("draft-content-email-" + jobId);
-  const dmContent = document.getElementById("draft-content-dm-" + jobId);
-  if (!panel || !emailBtn || !dmBtn || !emailContent || !dmContent) return;
-
-  // Clicking the already-active tab again deselects it and closes the draft.
-  if (panel.classList.contains("open") && panel.dataset.activeTab === tab) {
-    closeJob(jobId);
-    return;
-  }
-
-  panel.classList.add("open");
-  panel.dataset.activeTab = tab;
-  emailBtn.classList.toggle("active", tab === "email");
-  dmBtn.classList.toggle("active", tab === "dm");
-  emailContent.style.display = tab === "email" ? "block" : "none";
-  dmContent.style.display = tab === "dm" ? "block" : "none";
-}
-
-function closeJob(jobId) {
-  const panel = document.getElementById("draft-panel-" + jobId);
-  const emailBtn = document.getElementById("tab-email-" + jobId);
-  const dmBtn = document.getElementById("tab-dm-" + jobId);
-  if (panel) {
-    panel.classList.remove("open");
-    panel.dataset.activeTab = "";
-  }
-  if (emailBtn) emailBtn.classList.remove("active");
-  if (dmBtn) dmBtn.classList.remove("active");
-}
-
-function cleanSubjectForCopy(subjectLine) {
-  let text = (subjectLine || "").trim();
-  text = text.replace(/^Subject:\s*/i, "").trim();
-  // Defensive: strip a stray trailing colon/semicolon, and collapse a run of
-  // trailing dots (e.g. "APM..") down to the single dot that belongs there.
-  text = text.replace(/[:;]+$/, "").trim();
-  text = text.replace(/\.{2,}$/, ".");
-  return text;
-}
-
-function copyTextInline(text, btn) {
-  navigator.clipboard.writeText(text).then(() => {
-    btn.innerHTML = "&#10003;";
-    btn.style.color = "var(--pink)";
-    setTimeout(() => { btn.innerHTML = "&#10697;"; btn.style.color = "var(--text-muted)"; }, 1500);
-  }).catch(() => {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    btn.innerHTML = "&#10003;";
-    setTimeout(() => { btn.innerHTML = "&#10697;"; }, 1500);
-  });
-}
-
-function copyDraftBody(jobId, btn) {
-  const el = document.getElementById("draft-" + jobId);
-  if (!el) return;
-  const text = el.innerText;
-  navigator.clipboard.writeText(text).then(() => {
-    btn.innerHTML = "&#10003;";
-    btn.style.color = "var(--pink)";
-    setTimeout(() => { btn.innerHTML = "&#10697;"; btn.style.color = "var(--text-muted)"; }, 1500);
-  }).catch(() => {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    btn.innerHTML = "&#10003;";
-    setTimeout(() => { btn.innerHTML = "&#10697;"; }, 1500);
-  });
-}
-
-function copyEmail(email, btn) {
-  navigator.clipboard.writeText(email).then(() => {
-    btn.innerHTML = "&#10003;";
-    btn.style.color = "var(--pink)";
-    setTimeout(() => { btn.innerHTML = "&#10697;"; btn.style.color = "var(--text-muted)"; }, 1500);
-  }).catch(() => {
-    const ta = document.createElement("textarea");
-    ta.value = email;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    btn.innerHTML = "&#10003;";
-    setTimeout(() => { btn.innerHTML = "&#10697;"; }, 1500);
-  });
-}
-
-function linkedInSearchUrl(company) {
-  const keywords = encodeURIComponent(company || "") + "+product";
-  return `https://www.linkedin.com/search/results/people/?keywords=${keywords}&origin=GLOBAL_SEARCH_HEADER`;
-}
-
-function linkedInJobSearchUrl(jobTitle, company) {
-  const keywords = encodeURIComponent(jobTitle || "") + "+" + encodeURIComponent(company || "");
-  return `https://www.linkedin.com/jobs/search/?keywords=${keywords}&location=India`;
-}
-
-function dmTemplate(job) {
-  return `Hi [Name], came across the ${job.title || "role"} opening at ${job.company || "your company"} and wanted to reach out directly. Two internships — one at a scaled product org, one at an early-stage startup — and three products shipped independently since, all live, all documented. Worth a look at the work: https://kriti-portfolio-pm.vercel.app/ Would love your feedback on the work or any nudge in the right direction if there's a fit. — Kriti`;
-}
-
-function copyDM(jobId, btn) {
-  const job = (cachedJobs || []).find(j => String(j.job_id) === String(jobId));
-  if (!job) return;
-
-  const text = dmTemplate(job);
-  const originalLabel = btn.textContent;
-
-  const onCopied = () => {
-    btn.textContent = "Copied!";
-    setTimeout(() => { btn.textContent = originalLabel; }, 2000);
-  };
-
-  navigator.clipboard.writeText(text).then(onCopied).catch(() => {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
-    onCopied();
-  });
-}
-
-// ---------- PIPELINE ----------
-
-function ringSvg(pct, glow) {
-  const r = 50, c = 2 * Math.PI * r;
-  const dash = c * Math.min(1, pct);
-  const strokeColor = glow ? "url(#gradPinkPurple)" : "var(--lavender)";
-  const dashArray = glow ? `${dash} ${c}` : `4 6`;
-  const opacity = glow ? 1 : (pct > 0 ? 1 : 0.35);
-  return `<svg width="120" height="120" viewBox="0 0 120 120">
-    <defs><linearGradient id="gradPinkPurple" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#8060C0"/><stop offset="100%" stop-color="#C830F0"/>
-    </linearGradient></defs>
-    <circle cx="60" cy="60" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="10"/>
-    <circle cx="60" cy="60" r="${r}" fill="none" stroke="${strokeColor}" stroke-width="10"
-      stroke-linecap="round" stroke-dasharray="${glow ? dash + ' ' + c : dashArray}"
-      transform="rotate(-90 60 60)" opacity="${opacity}"
-      style="${glow ? 'filter: drop-shadow(0 0 6px var(--pink-glow));' : ''}"/>
-  </svg>`;
-}
-
-async function loadPipeline() {
-  const res = await fetch("/api/pipeline");
-  const d = await res.json();
-
-  if (d.emailed === 0) {
-    document.getElementById("pipeline-rings").innerHTML = "";
-    document.getElementById("pipeline-goal").innerHTML =
-      '<div class="empty-note">Start marking jobs as Sent in Actions to see your funnel fill up.</div>';
-    document.getElementById("perf-tbody").innerHTML = "";
-    return;
-  }
-
-  const rings = [
-    {label: "Seen", value: d.seen, max: d.seen, desc: "Total roles surfaced", glow: true},
-    {label: "Emailed", value: d.emailed, max: d.seen, desc: "Cold emails sent", glow: false},
-    {label: "Replied", value: d.replied, max: d.seen, desc: "Got a response", glow: false},
-    {label: "Interview", value: d.interview, max: d.seen, desc: "Interview booked", glow: false},
+function renderKpiMetrics(m) {
+  const cards=[
+    {v:m.applications_sent,l:'Applications',cls:'lav'},{v:m.linkedin_sent,l:'LinkedIn Sent',cls:'lav'},
+    {v:m.emails_sent,l:'Emails Sent',cls:'pink'},{v:m.followups_sent,l:'Follow-ups',cls:'pink'},
+    {v:m.responses,l:'Responses',cls:'green'},{v:m.conversations,l:'Conversations',cls:'green'},
+    {v:m.interviews,l:'Interviews',cls:'yellow'},{v:m.offers,l:'Offers',cls:'yellow'},
   ];
-
-  document.getElementById("pipeline-rings").innerHTML = rings.map(r => {
-    const pct = r.max > 0 ? r.value / r.max : 0;
-    return `<div class="ring-card">
-      <div class="ring-svg-wrap">
-        ${ringSvg(pct, r.glow)}
-        <div class="ring-number mono">${r.value}</div>
-      </div>
-      <div class="ring-label">${r.label}</div>
-      <div class="ring-desc">${r.desc}</div>
-    </div>`;
-  }).join("");
-
-  document.getElementById("pipeline-goal").innerHTML = `
-    <div class="goal-top">
-      <span class="goal-label">Emails sent this week</span>
-      <span class="goal-counter mono" style="background: var(--gradient-hot); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">${d.weekly_goal.current}</span>
-    </div>
-    <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">Keep going &mdash; aim for 10+ per week to maximize response rate</div>`;
-
-  document.getElementById("perf-tbody").innerHTML = d.sources.map(s => `
-    <tr>
-      <td class="name">${escapeHtml(s.name)}</td>
-      <td class="num">${s.seen}</td>
-      <td class="num">${s.sent}</td>
-      <td class="num">${s.replies}</td>
-    </tr>`).join("");
+  document.getElementById('kpi-metrics').innerHTML=cards.map(c=>`<div class="metric-card ${c.cls}"><div class="metric-val">${c.v}</div><div class="metric-lbl">${c.l}</div></div>`).join('');
 }
 
-renderFilterRow();
-loadAgent();
-</script>
+function renderKpiConv(m) {
+  const rows=[
+    {r:m.application_to_response_rate,l:'Application → Response'},
+    {r:m.response_to_conversation_rate,l:'Response → Conversation'},
+    {r:m.conversation_to_interview_rate,l:'Conversation → Interview'},
+    {r:m.interview_to_offer_rate,l:'Interview → Offer'},
+  ];
+  document.getElementById('kpi-conv').innerHTML=rows.map(r=>
+    `<div class="conv-card">${r.r!==null&&r.r!==undefined?`<div class="conv-rate">${r.r}%</div>`:`<div class="conv-null">&mdash;</div>`}<div class="conv-lbl">${r.l}</div></div>`
+  ).join('');
+}
 
+function renderKpiAtt(jobs) {
+  const due=jobs.filter(j=>j.followup_due);
+  if (!due.length){document.getElementById('kpi-att').innerHTML='';return;}
+  document.getElementById('kpi-att').innerHTML=`<div class="att-block"><div class="att-title">Follow-up Due (${due.length})</div>
+    ${due.map(j=>`<div class="att-row"><span class="att-company">${esc(j.company)}</span><span class="att-title-text">${esc(j.title)}</span>
+      <button class="event-btn due" onclick="kpiLogEvent('${j.job_id}','followup_sent',this)">Mark Follow-up Sent</button>
+    </div>`).join('')}
+  </div>`;
+}
+
+const EV_ORDER=['applied','linkedin_sent','email_sent','followup_sent','response','conversation','interview','rejected','offer'];
+const EV_LABELS={applied:'Applied',linkedin_sent:'LinkedIn Sent',email_sent:'Email Sent',followup_sent:'Follow-up Sent',response:'Response',conversation:'Conversation',interview:'Interview',rejected:'Rejected',offer:'Offer'};
+const EV_NEG=new Set(['rejected']);
+const EV_GOLD=new Set(['offer','interview']);
+const STATE_PRIO={'OFFER':1,'INTERVIEW':2,'CONVERSATION':3,'RESPONDED':4,'FOLLOW-UP DUE':5,'WAITING':6,'APPLICATION SENT':7,'REJECTED':8,'NO RESPONSE':9,'NOT STARTED':10};
+
+function renderKpiList() {
+  if (!kpiData) return;
+  const q=(document.getElementById('kpi-search').value||'').toLowerCase();
+  const jobs=[...kpiData.jobs].filter(j=>!q||j.title.toLowerCase().includes(q)||j.company.toLowerCase().includes(q))
+    .sort((a,b)=>{const pa=STATE_PRIO[a.state]||99,pb=STATE_PRIO[b.state]||99;if(pa!==pb)return pa-pb;const ap={P1:1,P2:2,P3:3}[a.attack_priority]||9,bp={P1:1,P2:2,P3:3}[b.attack_priority]||9;return ap-bp;});
+  if (!jobs.length){document.getElementById('kpi-list').innerHTML='<div class="empty">No jobs match.</div>';return;}
+  document.getElementById('kpi-list').innerHTML=jobs.map(j=>{
+    const sc='s-'+j.state;
+    const btns=EV_ORDER.map(et=>{
+      const active=j[et],neg=EV_NEG.has(et)&&active?' neg':'',gold=EV_GOLD.has(et)&&active?' gold':'',due=et==='followup_sent'&&j.followup_due&&!active?' due':'';
+      const d=active&&j.events_at&&j.events_at[et]?fmtDate(j.events_at[et]):'';
+      return `<button class="event-btn${active?' active'+neg+gold:due}" onclick="kpiLogEvent('${j.job_id}','${et}',this)" title="${active?'Logged '+d+' — click to remove':'Mark done'}">${EV_LABELS[et]}${active&&d?' · '+d:''}</button>`;
+    }).join('');
+    return `<div class="pipe-job" id="pj-${j.job_id}">
+      <div class="pipe-job-top">
+        <div style="flex:1;min-width:200px;"><div class="pipe-job-title">${esc(j.title)}</div><div class="pipe-job-co">${esc(j.company)}${j.location?' · '+esc(j.location):''}</div></div>
+        <span class="state-badge ${sc}">${esc(j.state)}</span>
+      </div>
+      <div class="event-btns">${btns}</div>
+    </div>`;
+  }).join('');
+}
+
+async function kpiLogEvent(jobId, eventType, btn) {
+  if (!kpiData) return;
+  const job = kpiData.jobs.find(j=>j.job_id===String(jobId));
+  if (!job) return;
+  const isActive = job[eventType];
+  const action = isActive?'unset':'set';
+  if (isActive && !confirm(`Remove "${EV_LABELS[eventType]}" from this job?`)) return;
+  btn.disabled=true;
+  try {
+    const res=await fetch('/api/pipeline/log',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+kpiPasskey,'Content-Type':'application/json'},
+      body:JSON.stringify({job_id:jobId,event_type:eventType,action,noted_at:new Date().toISOString()}),
+    });
+    if (res.status===401){kpiLock();return;}
+    if (!res.ok){const e=await res.json().catch(()=>({}));alert('Error: '+(e.error||res.status));return;}
+    await loadKpiData();
+  } catch(e){alert('Network error.');}
+  finally{btn.disabled=false;}
+}
+
+// ---- Boot ----
+loadHome();
+</script>
 </body>
 </html>
+
 """
 
 
