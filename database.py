@@ -76,6 +76,10 @@ def get_connection():
         conn = Connection(raw, is_postgres=False)
     try:
         yield conn
+    except Exception:
+        if conn.is_postgres:
+            conn._raw.rollback()
+        raise
     finally:
         conn.close()
 
@@ -240,10 +244,7 @@ def _init_postgres(conn):
         ("linkedin_draft", "TEXT"),
         ("execution_packet", "TEXT"),
     ]:
-        try:
-            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
-        except Exception:
-            pass  # column already exists
+        conn.execute(f"ALTER TABLE jobs ADD COLUMN IF NOT EXISTS {col} {typedef}")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS user_actions (
