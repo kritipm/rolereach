@@ -93,28 +93,55 @@ def _init_postgres(conn):
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS jobs (
-            comment_id       BIGINT PRIMARY KEY,
-            thread_id        BIGINT NOT NULL,
-            author           TEXT,
-            posted_at        TEXT,
-            matched_keyword  TEXT,
-            text             TEXT NOT NULL,
-            url              TEXT,
-            company_url      TEXT,
-            verified         INTEGER NOT NULL DEFAULT 0,
-            source           TEXT NOT NULL DEFAULT 'hackernews',
-            external_id      TEXT,
-            hm_name          TEXT,
-            hm_email         TEXT,
-            smtp_guesses     TEXT,
-            company_linkedin TEXT,
-            email_draft      TEXT,
-            notified         INTEGER NOT NULL DEFAULT 0,
-            experience_range TEXT,
-            description      TEXT
+            comment_id                  BIGINT PRIMARY KEY,
+            thread_id                   BIGINT NOT NULL,
+            author                      TEXT,
+            posted_at                   TEXT,
+            matched_keyword             TEXT,
+            text                        TEXT NOT NULL,
+            url                         TEXT,
+            company_url                 TEXT,
+            verified                    INTEGER NOT NULL DEFAULT 0,
+            source                      TEXT NOT NULL DEFAULT 'hackernews',
+            external_id                 TEXT,
+            hm_name                     TEXT,
+            hm_email                    TEXT,
+            smtp_guesses                TEXT,
+            company_linkedin            TEXT,
+            email_draft                 TEXT,
+            notified                    INTEGER NOT NULL DEFAULT 0,
+            experience_range            TEXT,
+            description                 TEXT,
+            eligibility_status          TEXT,
+            eligibility_reason          TEXT,
+            role_category               TEXT,
+            experience_status           TEXT,
+            location_status             TEXT,
+            employment_status           TEXT,
+            seniority_status            TEXT,
+            freshness_status            TEXT,
+            education_status            TEXT,
+            work_authorization_status   TEXT
         )
         """
     )
+    # Add eligibility columns to pre-existing tables (idempotent via IF NOT EXISTS)
+    for col, typedef in [
+        ("eligibility_status", "TEXT"),
+        ("eligibility_reason", "TEXT"),
+        ("role_category", "TEXT"),
+        ("experience_status", "TEXT"),
+        ("location_status", "TEXT"),
+        ("employment_status", "TEXT"),
+        ("seniority_status", "TEXT"),
+        ("freshness_status", "TEXT"),
+        ("education_status", "TEXT"),
+        ("work_authorization_status", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
+        except Exception:
+            pass  # column already exists
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS user_actions (
@@ -130,25 +157,35 @@ def _init_sqlite(conn):
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS jobs (
-            comment_id INTEGER PRIMARY KEY,
-            thread_id INTEGER NOT NULL,
-            author TEXT,
-            posted_at TEXT,
-            matched_keyword TEXT,
-            text TEXT NOT NULL,
-            url TEXT,
-            company_url TEXT,
-            verified INTEGER NOT NULL DEFAULT 0,
-            source TEXT NOT NULL DEFAULT 'hackernews',
-            external_id TEXT,
-            hm_name TEXT,
-            hm_email TEXT,
-            smtp_guesses TEXT,
-            company_linkedin TEXT,
-            email_draft TEXT,
-            notified INTEGER NOT NULL DEFAULT 0,
-            experience_range TEXT,
-            description TEXT
+            comment_id                  INTEGER PRIMARY KEY,
+            thread_id                   INTEGER NOT NULL,
+            author                      TEXT,
+            posted_at                   TEXT,
+            matched_keyword             TEXT,
+            text                        TEXT NOT NULL,
+            url                         TEXT,
+            company_url                 TEXT,
+            verified                    INTEGER NOT NULL DEFAULT 0,
+            source                      TEXT NOT NULL DEFAULT 'hackernews',
+            external_id                 TEXT,
+            hm_name                     TEXT,
+            hm_email                    TEXT,
+            smtp_guesses                TEXT,
+            company_linkedin            TEXT,
+            email_draft                 TEXT,
+            notified                    INTEGER NOT NULL DEFAULT 0,
+            experience_range            TEXT,
+            description                 TEXT,
+            eligibility_status          TEXT,
+            eligibility_reason          TEXT,
+            role_category               TEXT,
+            experience_status           TEXT,
+            location_status             TEXT,
+            employment_status           TEXT,
+            seniority_status            TEXT,
+            freshness_status            TEXT,
+            education_status            TEXT,
+            work_authorization_status   TEXT
         )
         """
     )
@@ -188,6 +225,26 @@ def _init_sqlite(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN experience_range TEXT")
     if "description" not in existing_columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN description TEXT")
+    if "eligibility_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN eligibility_status TEXT")
+    if "eligibility_reason" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN eligibility_reason TEXT")
+    if "role_category" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN role_category TEXT")
+    if "experience_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN experience_status TEXT")
+    if "location_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN location_status TEXT")
+    if "employment_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN employment_status TEXT")
+    if "seniority_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN seniority_status TEXT")
+    if "freshness_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN freshness_status TEXT")
+    if "education_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN education_status TEXT")
+    if "work_authorization_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN work_authorization_status TEXT")
 
 
 def save_job(conn, job):
@@ -255,12 +312,55 @@ def fetch_all_jobs():
         return [dict(row) for row in rows]
 
 
+def fetch_unchecked_jobs():
+    """Return all jobs that have not yet been assessed by the eligibility gate."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE eligibility_status IS NULL"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_eligibility(conn, comment_id, result):
+    """Write eligibility assessment fields back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            eligibility_status        = ?,
+            eligibility_reason        = ?,
+            role_category             = ?,
+            experience_status         = ?,
+            location_status           = ?,
+            employment_status         = ?,
+            seniority_status          = ?,
+            freshness_status          = ?,
+            education_status          = ?,
+            work_authorization_status = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["eligibility_status"],
+            result["eligibility_reason"],
+            result["role_category"],
+            result["experience_status"],
+            result["location_status"],
+            result["employment_status"],
+            result["seniority_status"],
+            result["freshness_status"],
+            result["education_status"],
+            result["work_authorization_status"],
+            comment_id,
+        ),
+    )
+
+
 def fetch_jobs_needing_enrichment(limit=None):
     with get_connection() as conn:
         query = """
             SELECT * FROM jobs
             WHERE company_url IS NOT NULL AND TRIM(company_url) != ''
               AND (hm_email IS NULL OR TRIM(hm_email) = '')
+              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
         """
         if limit is not None:
             query += f" LIMIT {int(limit)}"
@@ -309,6 +409,7 @@ def fetch_jobs_needing_draft():
             SELECT * FROM jobs
             WHERE hm_email IS NOT NULL AND TRIM(hm_email) != ''
               AND (email_draft IS NULL OR TRIM(email_draft) = '')
+              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
         """
         return [dict(row) for row in conn.execute(query).fetchall()]
 
@@ -326,10 +427,21 @@ def fetch_unnotified_jobs(source=None):
     with get_connection() as conn:
         if source:
             rows = conn.execute(
-                "SELECT * FROM jobs WHERE notified = 0 AND source = ?", (source,)
+                """
+                SELECT * FROM jobs
+                WHERE notified = 0 AND source = ?
+                  AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+                """,
+                (source,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM jobs WHERE notified = 0").fetchall()
+            rows = conn.execute(
+                """
+                SELECT * FROM jobs
+                WHERE notified = 0
+                  AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+                """
+            ).fetchall()
         return [dict(row) for row in rows]
 
 
