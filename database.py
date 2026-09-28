@@ -578,12 +578,12 @@ def update_eligibility(conn, comment_id, result):
 
 
 def fetch_jobs_needing_fit_assessment():
-    """Return ELIGIBLE/REVIEW jobs that have not yet been scored by fit assessment."""
+    """Return ELIGIBLE jobs that have not yet been scored by fit assessment."""
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT * FROM jobs
-            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+            WHERE eligibility_status = 'ELIGIBLE'
               AND role_fit_score IS NULL
             """
         ).fetchall()
@@ -635,7 +635,7 @@ def fetch_jobs_needing_enrichment(limit=None):
             SELECT * FROM jobs
             WHERE company_url IS NOT NULL AND TRIM(company_url) != ''
               AND (hm_email IS NULL OR TRIM(hm_email) = '')
-              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+              AND eligibility_status = 'ELIGIBLE'
         """
         if limit is not None:
             query += f" LIMIT {int(limit)}"
@@ -684,7 +684,7 @@ def fetch_jobs_needing_draft():
             SELECT * FROM jobs
             WHERE hm_email IS NOT NULL AND TRIM(hm_email) != ''
               AND (email_draft IS NULL OR TRIM(email_draft) = '')
-              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+              AND eligibility_status = 'ELIGIBLE'
         """
         return [dict(row) for row in conn.execute(query).fetchall()]
 
@@ -747,12 +747,12 @@ def fetch_all_job_actions():
 
 
 def fetch_jobs_needing_attack_route():
-    """Return ELIGIBLE/REVIEW jobs that have a priority level but no attack route yet."""
+    """Return ELIGIBLE jobs that have a priority level but no attack route yet."""
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT * FROM jobs
-            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+            WHERE eligibility_status = 'ELIGIBLE'
               AND priority_level IS NOT NULL
               AND attack_access_level IS NULL
             """
@@ -798,14 +798,14 @@ def update_attack_route(conn, comment_id, result):
 
 
 def fetch_jobs_needing_execution_packet():
-    """Return jobs that have an attack plan but no execution packet yet."""
+    """Return ELIGIBLE jobs that have an attack plan but no execution packet yet."""
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT * FROM jobs
             WHERE attack_access_level IS NOT NULL
               AND execution_packet IS NULL
-              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+              AND eligibility_status = 'ELIGIBLE'
             """
         ).fetchall()
         return [dict(row) for row in rows]
@@ -829,12 +829,12 @@ def update_execution_packet(conn, comment_id, result):
 
 
 def fetch_jobs_needing_priority():
-    """Return ELIGIBLE/REVIEW jobs with completed fit assessment but no priority score."""
+    """Return ELIGIBLE jobs with completed fit assessment but no priority score."""
     with get_connection() as conn:
         rows = conn.execute(
             """
             SELECT * FROM jobs
-            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+            WHERE eligibility_status = 'ELIGIBLE'
               AND role_fit_score IS NOT NULL
               AND priority_score IS NULL
             """

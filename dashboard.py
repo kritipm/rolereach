@@ -142,13 +142,14 @@ def api_summary():
 
     with database.get_connection() as conn:
         discovered = _count(conn, "SELECT COUNT(*) as cnt FROM jobs")
-        eligible = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE eligibility_status IN ('ELIGIBLE','REVIEW')")
+        eligible = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE eligibility_status = 'ELIGIBLE'")
+        review = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE eligibility_status = 'REVIEW'")
         p1 = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE attack_priority='P1'")
         p2 = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE attack_priority='P2'")
         p3 = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE attack_priority='P3'")
         contacts = _count(
             conn,
-            "SELECT COUNT(*) as cnt FROM jobs WHERE eligibility_status IN ('ELIGIBLE','REVIEW')"
+            "SELECT COUNT(*) as cnt FROM jobs WHERE eligibility_status = 'ELIGIBLE'"
             " AND (hm_email IS NOT NULL OR company_linkedin IS NOT NULL)",
         )
         attacks_ready = _count(conn, "SELECT COUNT(*) as cnt FROM jobs WHERE execution_packet IS NOT NULL")
@@ -160,13 +161,14 @@ def api_summary():
         )
         source_rows = conn.execute(
             "SELECT source, COUNT(*) as cnt FROM jobs"
-            " WHERE eligibility_status IN ('ELIGIBLE','REVIEW') GROUP BY source"
+            " WHERE eligibility_status = 'ELIGIBLE' GROUP BY source"
         ).fetchall()
         sources = {r["source"]: r["cnt"] for r in source_rows}
 
     return jsonify({
         "discovered": discovered,
         "eligible": eligible,
+        "review": review,
         "p1": p1,
         "p2": p2,
         "p3": p3,
@@ -507,6 +509,41 @@ def api_admin_run_eligibility():
         "rerun_all": rerun_all,
         "counts": counts or {},
     })
+
+
+@app.route("/api/admin/run-pipeline", methods=["POST"])
+def api_admin_run_pipeline():
+    err = _require_passkey()
+    if err:
+        return err
+
+    import run_fit_assessment
+    import run_priority
+    import run_attack_route
+    import run_execution_packet
+
+    results = {}
+    try:
+        results["fit"] = run_fit_assessment.run() or {}
+    except Exception as e:
+        results["fit"] = {"error": str(e)}
+
+    try:
+        results["priority"] = run_priority.run() or {}
+    except Exception as e:
+        results["priority"] = {"error": str(e)}
+
+    try:
+        results["attack"] = run_attack_route.run() or {}
+    except Exception as e:
+        results["attack"] = {"error": str(e)}
+
+    try:
+        results["execution"] = run_execution_packet.run() or {}
+    except Exception as e:
+        results["execution"] = {"error": str(e)}
+
+    return jsonify({"status": "ok", "results": results})
 
 
 # ---------- API: DB sync (called by scheduler.py after each pipeline run) ----------
