@@ -6,8 +6,29 @@ from flask import Flask, jsonify, request
 import config
 import database
 import experience_filter
+import pipeline as pipeline_lib
 
 app = Flask(__name__)
+
+PIPELINE_PASSKEY = os.environ.get("PIPELINE_PASSKEY", "")
+
+
+def _check_passkey():
+    """Return True if the request carries the correct pipeline passkey."""
+    if not PIPELINE_PASSKEY:
+        return True  # No passkey configured → open (dev/local mode)
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:] == PIPELINE_PASSKEY
+    return False
+
+
+def _require_passkey():
+    """Return a 401 response if passkey check fails, else None."""
+    if not _check_passkey():
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
+
 
 STATUS_CYCLE = ["NEW", "Sent", "Replied", "Interview", "Skip"]
 SOURCES = ["hackernews", "cutshort", "iimjobs", "google_jobs", "internshala", "jsearch", "yc", "careers"]
@@ -315,6 +336,531 @@ def api_sync_db():
     os.replace(tmp_path, config.DB_PATH)
 
     return jsonify({"status": "ok", "bytes": os.path.getsize(config.DB_PATH)})
+
+
+# ---------- API: Pipeline events (Layer 6 — passkey-gated) ----------
+
+
+@app.route("/api/pipeline/log", methods=["POST"])
+def api_pipeline_log():
+    err = _require_passkey()
+    if err:
+        return err
+
+    payload = request.get_json(force=True, silent=True) or {}
+    job_id = payload.get("job_id")
+    event_type = payload.get("event_type")
+    action = payload.get("action", "set")
+    noted_at = payload.get("noted_at") or datetime.now().isoformat(timespec="seconds")
+
+    if not job_id:
+        return jsonify({"error": "job_id required"}), 400
+    if event_type not in pipeline_lib.EVENT_TYPES:
+        return jsonify({"error": f"event_type must be one of {sorted(pipeline_lib.EVENT_TYPES)}"}), 400
+    if action not in ("set", "unset"):
+        return jsonify({"error": "action must be 'set' or 'unset'"}), 400
+
+    try:
+        job_id = int(job_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "job_id must be an integer"}), 400
+
+    if action == "set":
+        database.upsert_pipeline_event(job_id, event_type, noted_at)
+    else:
+        database.delete_pipeline_event(job_id, event_type)
+
+    return jsonify({"ok": True, "job_id": job_id, "event_type": event_type, "action": action})
+
+
+@app.route("/api/pipeline/state")
+def api_pipeline_state():
+    err = _require_passkey()
+    if err:
+        return err
+
+    all_events = database.fetch_pipeline_events()
+    jobs = get_all_jobs_with_meta()
+
+    job_states = []
+    for job in jobs:
+        jid = job["comment_id"]
+        events = all_events.get(jid, [])
+        state = pipeline_lib.compute_pipeline_state(events)
+        job_states.append({
+            "job_id": str(jid),
+            "title": job["title"],
+            "company": job["author"],
+            "location": job.get("location", ""),
+            "attack_priority": job.get("attack_priority"),
+            "attack_intensity": job.get("attack_intensity"),
+            "posted_at": job.get("posted_at"),
+            "url": job.get("url"),
+            "hm_email": job.get("hm_email"),
+            **state,
+        })
+
+    metrics = pipeline_lib.compute_metrics(all_events)
+    return jsonify({"jobs": job_states, "metrics": metrics})
+
+
+@app.route("/api/pipeline/metrics")
+def api_pipeline_metrics():
+    err = _require_passkey()
+    if err:
+        return err
+
+    all_events = database.fetch_pipeline_events()
+    metrics = pipeline_lib.compute_metrics(all_events)
+    return jsonify(metrics)
+
+
+# ---------- KPI: private dashboard (passkey-gated data, gate enforced on all API calls) ----------
+
+
+@app.route("/kpi")
+def kpi():
+    return KPI_HTML
+
+
+KPI_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoleReach — Pipeline</title>
+<style>
+  :root {
+    --bg: #09081C; --card: #100F2A; --card-hover: #171540;
+    --border: #1A183C;
+    --pink: #C830F0; --pink-glow: rgba(200,48,240,0.35);
+    --pink-dark: #180828; --pink-border: #2C0A42;
+    --purple: #8060C0; --lavender: #DDB0FF;
+    --lavender-dark: #140C2C; --lavender-border: #201848;
+    --green: #30E0A0; --green-dark: #051A10; --green-border: #0A3020;
+    --yellow: #F0C040; --yellow-dark: #1A1000; --yellow-border: #302000;
+    --red: #F04060; --red-dark: #1A0010; --red-border: #3A0020;
+    --text-primary: #FFFFFF; --text-secondary: #EFEFEF;
+    --text-muted: #B0B0B0; --text-dim: #505060;
+    --gradient-hot: linear-gradient(135deg, #8060C0, #C830F0);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh; }
+
+  /* ---------- passkey gate ---------- */
+  #gate { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  .gate-card { background:var(--card); border:1px solid var(--border); border-radius:16px;
+    padding:40px 36px; max-width:380px; width:100%; text-align:center; }
+  .gate-title { font-size:22px; font-weight:800; margin-bottom:6px; }
+  .gate-sub { font-size:13px; color:var(--text-muted); margin-bottom:28px; }
+  .gate-input { width:100%; background:var(--bg); border:1px solid var(--border);
+    color:var(--text-primary); font-size:15px; padding:12px 16px; border-radius:10px;
+    outline:none; margin-bottom:14px; }
+  .gate-input:focus { border-color:var(--pink); }
+  .gate-btn { width:100%; background:var(--gradient-hot); color:#fff; border:none;
+    font-size:14px; font-weight:800; padding:13px; border-radius:10px; cursor:pointer; }
+  .gate-btn:hover { opacity:0.9; }
+  .gate-error { font-size:12px; color:var(--red); margin-top:10px; }
+
+  /* ---------- main layout ---------- */
+  #app { display:none; }
+  header { display:flex; align-items:center; justify-content:space-between;
+    padding:18px 24px; border-bottom:1px solid var(--border);
+    position:sticky; top:0; background:var(--bg); z-index:10; }
+  .header-title { font-size:18px; font-weight:800; background:var(--gradient-hot);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .header-sub { font-size:12px; color:var(--text-muted); margin-left:10px; }
+  .logout-btn { background:none; border:1px solid var(--border); color:var(--text-muted);
+    font-size:12px; padding:6px 14px; border-radius:999px; cursor:pointer; }
+  .logout-btn:hover { border-color:var(--pink); color:var(--pink); }
+
+  .main { max-width:1060px; margin:0 auto; padding:24px 20px 60px; }
+
+  /* ---------- metrics grid ---------- */
+  .metrics-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr));
+    gap:10px; margin-bottom:24px; }
+  .metric-card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px 14px; }
+  .metric-val { font-size:28px; font-weight:900; line-height:1; }
+  .metric-label { font-size:11px; color:var(--text-muted); font-weight:700;
+    text-transform:uppercase; letter-spacing:0.5px; margin-top:5px; }
+  .metric-card.pink .metric-val { color:var(--pink); }
+  .metric-card.lav .metric-val { color:var(--lavender); }
+  .metric-card.green .metric-val { color:var(--green); }
+  .metric-card.yellow .metric-val { color:var(--yellow); }
+
+  /* ---------- funnel ---------- */
+  .section-title { font-size:13px; font-weight:800; color:var(--text-muted);
+    text-transform:uppercase; letter-spacing:0.6px; margin-bottom:12px; }
+  .funnel-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));
+    gap:10px; margin-bottom:28px; }
+  .funnel-card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px 14px; }
+  .funnel-rate { font-size:26px; font-weight:900; color:var(--lavender); }
+  .funnel-label { font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+  .funnel-null { font-size:18px; font-weight:700; color:var(--text-dim); }
+
+  /* ---------- attention ---------- */
+  .attention-block { background:var(--red-dark); border:1px solid var(--red-border);
+    border-radius:12px; padding:16px 18px; margin-bottom:24px; }
+  .attention-title { font-size:13px; font-weight:800; color:var(--red);
+    text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
+  .attention-row { display:flex; align-items:center; gap:12px; padding:8px 0;
+    border-bottom:1px solid rgba(240,64,96,0.15); }
+  .attention-row:last-child { border-bottom:none; }
+  .attention-company { font-size:13px; font-weight:700; color:var(--text-primary); min-width:140px; }
+  .attention-title-text { font-size:12px; color:var(--text-muted); flex:1; }
+
+  /* ---------- pipeline list ---------- */
+  .pipeline-search { width:100%; background:var(--card); border:1px solid var(--border);
+    color:var(--text-primary); font-size:13px; padding:10px 14px; border-radius:10px;
+    outline:none; margin-bottom:14px; }
+  .pipeline-search:focus { border-color:var(--pink); }
+  .pipeline-job { background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:14px 16px; margin-bottom:8px; }
+  .pipeline-job-top { display:flex; align-items:flex-start; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
+  .pipeline-job-title { font-size:14px; font-weight:800; flex:1; min-width:160px; }
+  .pipeline-job-company { font-size:12px; color:var(--text-muted); }
+  .state-badge { display:inline-flex; align-items:center; padding:3px 10px;
+    border-radius:999px; font-size:10px; font-weight:800; letter-spacing:0.5px; white-space:nowrap; }
+  .state-OFFER { background:#1A1400; border:1px solid #504000; color:#F0C040; }
+  .state-INTERVIEW { background:var(--pink-dark); border:1px solid var(--pink-border); color:var(--pink); box-shadow:0 0 8px var(--pink-glow); }
+  .state-CONVERSATION { background:var(--green-dark); border:1px solid var(--green-border); color:var(--green); }
+  .state-RESPONDED { background:var(--green-dark); border:1px solid var(--green-border); color:var(--green); }
+  .state-REJECTED { background:var(--red-dark); border:1px solid var(--red-border); color:var(--red); }
+  .state-FOLLOW-UP\ DUE { background:var(--red-dark); border:1px solid var(--red-border); color:var(--red); animation:pulse-red 2s infinite; }
+  @keyframes pulse-red { 0%,100%{box-shadow:0 0 0 0 rgba(240,64,96,0)} 50%{box-shadow:0 0 0 4px rgba(240,64,96,0.25)} }
+  .state-NO\ RESPONSE { background:rgba(60,20,30,0.5); border:1px solid var(--red-border); color:#A04060; }
+  .state-WAITING { background:var(--yellow-dark); border:1px solid var(--yellow-border); color:var(--yellow); }
+  .state-APPLICATION\ SENT { background:var(--lavender-dark); border:1px solid var(--lavender-border); color:var(--lavender); }
+  .state-NOT\ STARTED { background:transparent; border:1px solid var(--border); color:var(--text-dim); }
+
+  .attack-chip { display:inline-flex; align-items:center; padding:2px 8px;
+    border-radius:999px; font-size:10px; font-weight:800; white-space:nowrap; }
+  .attack-chip.p1 { background:var(--pink-dark); border:1px solid var(--pink-border); color:var(--pink); }
+  .attack-chip.p2 { background:var(--lavender-dark); border:1px solid var(--lavender-border); color:var(--lavender); }
+  .attack-chip.p3 { background:rgba(80,80,96,0.18); border:1px solid var(--border); color:var(--text-muted); }
+
+  /* ---------- event buttons ---------- */
+  .event-btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .event-btn { font-size:11px; font-weight:700; padding:5px 12px; border-radius:999px;
+    border:1px solid var(--border); background:transparent; color:var(--text-muted);
+    cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+  .event-btn:hover { border-color:var(--pink); color:var(--pink); }
+  .event-btn.active { border-color:var(--green); color:var(--green); background:var(--green-dark); }
+  .event-btn.active.negative { border-color:var(--red); color:var(--red); background:var(--red-dark); }
+  .event-btn.active.gold { border-color:#F0C040; color:#F0C040; background:#1A1400; }
+  .event-btn.due { border-color:var(--red); color:var(--red); animation:pulse-red 2s infinite; }
+  .event-noted { font-size:10px; color:var(--text-dim); margin-top:4px; }
+
+  /* ---------- loading / empty ---------- */
+  .loading { text-align:center; padding:60px 20px; color:var(--text-dim); font-size:14px; }
+  .empty-note { text-align:center; padding:40px 20px; color:var(--text-dim); font-size:13px; }
+</style>
+</head>
+<body>
+
+<!-- Passkey gate -->
+<div id="gate">
+  <div class="gate-card">
+    <div class="gate-title">RoleReach</div>
+    <div class="gate-sub">Private pipeline &amp; KPI dashboard</div>
+    <input id="pk-input" class="gate-input" type="password" placeholder="Enter passkey"
+      onkeydown="if(event.key==='Enter') unlock()">
+    <button class="gate-btn" onclick="unlock()">Unlock</button>
+    <div id="gate-error" class="gate-error"></div>
+  </div>
+</div>
+
+<!-- Main app (shown after auth) -->
+<div id="app">
+  <header>
+    <div style="display:flex; align-items:baseline; gap:8px;">
+      <span class="header-title">RoleReach</span>
+      <span class="header-sub">Pipeline &amp; KPI</span>
+    </div>
+    <button class="logout-btn" onclick="logout()">Lock</button>
+  </header>
+
+  <div class="main">
+    <!-- Metrics -->
+    <div class="section-title" style="margin-bottom:12px;">Outreach</div>
+    <div id="metrics-grid" class="metrics-grid"><div class="loading">Loading…</div></div>
+
+    <!-- Funnel -->
+    <div class="section-title">Conversion Funnel</div>
+    <div id="funnel-grid" class="funnel-grid"></div>
+
+    <!-- Attention: follow-ups due -->
+    <div id="attention-block"></div>
+
+    <!-- Pipeline -->
+    <div class="section-title" style="margin-top:4px;">Pipeline</div>
+    <input id="pipeline-search" class="pipeline-search" type="text" placeholder="Filter by title or company…"
+      oninput="renderPipeline()">
+    <div id="pipeline-list"></div>
+  </div>
+</div>
+
+<script>
+const EVENT_LABELS = {
+  applied: "Applied",
+  linkedin_sent: "LinkedIn Sent",
+  email_sent: "Email Sent",
+  followup_sent: "Follow-up Sent",
+  response: "Response",
+  conversation: "Conversation",
+  interview: "Interview",
+  rejected: "Rejected",
+  offer: "Offer",
+};
+
+const EVENT_ORDER = ["applied", "linkedin_sent", "email_sent", "followup_sent", "response", "conversation", "interview", "rejected", "offer"];
+
+const NEGATIVE_EVENTS = new Set(["rejected"]);
+const GOLD_EVENTS = new Set(["offer", "interview"]);
+
+let cachedData = null;
+let passkey = "";
+
+function escHtml(s) {
+  if (!s) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function formatDate(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-IN", { day:"numeric", month:"short" });
+  } catch(e) { return ""; }
+}
+
+// ---------- Auth ----------
+
+function unlock() {
+  const val = document.getElementById("pk-input").value.trim();
+  if (!val) { document.getElementById("gate-error").textContent = "Enter a passkey."; return; }
+  passkey = val;
+  loadData(true);
+}
+
+function logout() {
+  passkey = "";
+  try { sessionStorage.removeItem("rr_pk"); } catch(e) {}
+  document.getElementById("app").style.display = "none";
+  document.getElementById("gate").style.display = "flex";
+  document.getElementById("pk-input").value = "";
+  cachedData = null;
+}
+
+// ---------- Data fetch ----------
+
+async function loadData(fromUnlock = false) {
+  try {
+    const res = await fetch("/api/pipeline/state", {
+      headers: { "Authorization": "Bearer " + passkey }
+    });
+    if (res.status === 401) {
+      if (fromUnlock) {
+        document.getElementById("gate-error").textContent = "Wrong passkey. Try again.";
+      }
+      return;
+    }
+    const data = await res.json();
+    cachedData = data;
+    try { sessionStorage.setItem("rr_pk", passkey); } catch(e) {}
+    document.getElementById("gate").style.display = "none";
+    document.getElementById("app").style.display = "block";
+    renderMetrics(data.metrics);
+    renderFunnel(data.metrics);
+    renderAttention(data.jobs);
+    renderPipeline();
+  } catch(e) {
+    if (fromUnlock) document.getElementById("gate-error").textContent = "Failed to connect.";
+  }
+}
+
+// ---------- Metrics ----------
+
+function renderMetrics(m) {
+  const cards = [
+    { val: m.applications_sent, label: "Applications", cls: "lav" },
+    { val: m.linkedin_sent,     label: "LinkedIn Sent", cls: "lav" },
+    { val: m.emails_sent,       label: "Emails Sent",   cls: "pink" },
+    { val: m.followups_sent,    label: "Follow-ups",    cls: "pink" },
+    { val: m.responses,         label: "Responses",     cls: "green" },
+    { val: m.conversations,     label: "Conversations", cls: "green" },
+    { val: m.interviews,        label: "Interviews",    cls: "yellow" },
+    { val: m.offers,            label: "Offers",        cls: "yellow" },
+  ];
+  document.getElementById("metrics-grid").innerHTML = cards.map(c =>
+    `<div class="metric-card ${c.cls}">
+      <div class="metric-val">${c.val}</div>
+      <div class="metric-label">${c.label}</div>
+    </div>`
+  ).join("");
+}
+
+// ---------- Funnel ----------
+
+function renderFunnel(m) {
+  const rows = [
+    { rate: m.application_to_response_rate,   label: "Application → Response" },
+    { rate: m.response_to_conversation_rate,  label: "Response → Conversation" },
+    { rate: m.conversation_to_interview_rate, label: "Conversation → Interview" },
+    { rate: m.interview_to_offer_rate,        label: "Interview → Offer" },
+  ];
+  document.getElementById("funnel-grid").innerHTML = rows.map(r =>
+    `<div class="funnel-card">
+      ${r.rate !== null
+        ? `<div class="funnel-rate">${r.rate}%</div>`
+        : `<div class="funnel-null">&mdash;</div>`}
+      <div class="funnel-label">${r.label}</div>
+    </div>`
+  ).join("");
+}
+
+// ---------- Attention ----------
+
+function renderAttention(jobs) {
+  const due = jobs.filter(j => j.followup_due);
+  if (!due.length) {
+    document.getElementById("attention-block").innerHTML = "";
+    return;
+  }
+  const rows = due.map(j =>
+    `<div class="attention-row">
+      <span class="attention-company">${escHtml(j.company)}</span>
+      <span class="attention-title-text">${escHtml(j.title)}</span>
+      <button class="event-btn due" onclick="logEvent('${j.job_id}', 'followup_sent', this)">Mark Follow-up Sent</button>
+    </div>`
+  ).join("");
+  document.getElementById("attention-block").innerHTML =
+    `<div class="attention-block">
+      <div class="attention-title">⚠️ Follow-up Due (${due.length})</div>
+      ${rows}
+    </div>`;
+}
+
+// ---------- Pipeline ----------
+
+const STATE_PRIORITY = {
+  "OFFER":1,"INTERVIEW":2,"CONVERSATION":3,"RESPONDED":4,
+  "FOLLOW-UP DUE":5,"WAITING":6,"APPLICATION SENT":7,
+  "REJECTED":8,"NO RESPONSE":9,"NOT STARTED":10,
+};
+
+function renderPipeline() {
+  if (!cachedData) return;
+  const q = (document.getElementById("pipeline-search").value || "").toLowerCase();
+  const jobs = cachedData.jobs
+    .filter(j => !q || j.title.toLowerCase().includes(q) || j.company.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const pa = STATE_PRIORITY[a.state] || 99;
+      const pb = STATE_PRIORITY[b.state] || 99;
+      if (pa !== pb) return pa - pb;
+      const ap = {P1:1,P2:2,P3:3}[a.attack_priority] || 9;
+      const bp = {P1:1,P2:2,P3:3}[b.attack_priority] || 9;
+      return ap - bp;
+    });
+
+  if (!jobs.length) {
+    document.getElementById("pipeline-list").innerHTML = '<div class="empty-note">No jobs match.</div>';
+    return;
+  }
+
+  document.getElementById("pipeline-list").innerHTML = jobs.map(jobCard).join("");
+}
+
+function jobCard(j) {
+  const stateClass = "state-" + j.state;
+  const apClass = j.attack_priority ? j.attack_priority.toLowerCase() : "";
+  const apLabel = j.attack_priority
+    ? `${j.attack_priority}${j.attack_intensity ? " — " + j.attack_intensity : ""}`
+    : "";
+
+  const eventBtns = EVENT_ORDER.map(et => {
+    const active = j[et];
+    const negCls = NEGATIVE_EVENTS.has(et) && active ? " negative" : "";
+    const goldCls = GOLD_EVENTS.has(et) && active ? " gold" : "";
+    const dueCls = et === "followup_sent" && j.followup_due && !active ? " due" : "";
+    const notedAt = active && j.events_at && j.events_at[et] ? formatDate(j.events_at[et]) : "";
+    return `<button class="event-btn${active ? " active" + negCls + goldCls : dueCls}"
+      onclick="logEvent('${j.job_id}', '${et}', this)"
+      title="${active ? "Logged: " + notedAt + " — click to remove" : "Mark as done"}"
+    >${escHtml(EVENT_LABELS[et])}${active && notedAt ? " · " + notedAt : ""}</button>`;
+  }).join("");
+
+  return `<div class="pipeline-job" id="pjob-${j.job_id}">
+    <div class="pipeline-job-top">
+      <div style="flex:1; min-width:200px;">
+        <div class="pipeline-job-title">${escHtml(j.title)}</div>
+        <div class="pipeline-job-company">${escHtml(j.company)}${j.location ? " · " + escHtml(j.location) : ""}</div>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+        <span class="state-badge ${stateClass}">${escHtml(j.state)}</span>
+        ${apLabel ? `<span class="attack-chip ${apClass}">${escHtml(apLabel)}</span>` : ""}
+      </div>
+    </div>
+    <div class="event-btns">${eventBtns}</div>
+  </div>`;
+}
+
+// ---------- Event logging ----------
+
+async function logEvent(jobId, eventType, btn) {
+  if (!cachedData) return;
+  const job = cachedData.jobs.find(j => j.job_id === String(jobId));
+  if (!job) return;
+
+  const isActive = job[eventType];
+  const action = isActive ? "unset" : "set";
+
+  if (isActive && !confirm(`Remove "${EVENT_LABELS[eventType]}" from this job?`)) return;
+
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/pipeline/log", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + passkey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        job_id: jobId,
+        event_type: eventType,
+        action: action,
+        noted_at: new Date().toISOString(),
+      }),
+    });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert("Error: " + (err.error || res.status));
+      return;
+    }
+    await loadData();
+  } catch(e) {
+    alert("Network error.");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Boot ----------
+
+(function() {
+  let saved = "";
+  try { saved = sessionStorage.getItem("rr_pk") || ""; } catch(e) {}
+  if (saved) {
+    passkey = saved;
+    loadData();
+  }
+})();
+</script>
+</body>
+</html>
+"""
 
 
 DASHBOARD_HTML = r"""

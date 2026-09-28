@@ -86,7 +86,35 @@ def init_db():
             _init_postgres(conn)
         else:
             _init_sqlite(conn)
+        _init_pipeline_events(conn)
         conn.commit()
+
+
+def _init_pipeline_events(conn):
+    if conn.is_postgres:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pipeline_events (
+                id         BIGSERIAL PRIMARY KEY,
+                job_id     BIGINT NOT NULL,
+                event_type TEXT NOT NULL,
+                noted_at   TEXT NOT NULL,
+                UNIQUE (job_id, event_type)
+            )
+            """
+        )
+    else:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pipeline_events (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id     INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                noted_at   TEXT NOT NULL,
+                UNIQUE (job_id, event_type)
+            )
+            """
+        )
 
 
 def _init_postgres(conn):
@@ -827,3 +855,66 @@ def update_priority(conn, comment_id, result):
             comment_id,
         ),
     )
+
+
+# ---------- Pipeline events (Layer 6) ----------
+
+def upsert_pipeline_event(job_id, event_type, noted_at):
+    """Insert or replace a pipeline event for a job."""
+    with get_connection() as conn:
+        if conn.is_postgres:
+            conn.execute(
+                """
+                INSERT INTO pipeline_events (job_id, event_type, noted_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (job_id, event_type) DO UPDATE SET noted_at = EXCLUDED.noted_at
+                """,
+                (job_id, event_type, noted_at),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO pipeline_events (job_id, event_type, noted_at)
+                VALUES (?, ?, ?)
+                """,
+                (job_id, event_type, noted_at),
+            )
+        conn.commit()
+
+
+def delete_pipeline_event(job_id, event_type):
+    """Remove a pipeline event for a job."""
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM pipeline_events WHERE job_id = ? AND event_type = ?",
+            (job_id, event_type),
+        )
+        conn.commit()
+
+
+def fetch_pipeline_events(job_id=None):
+    """
+    Fetch pipeline events.
+
+    With job_id: returns list of event dicts for that job.
+    Without job_id: returns dict {job_id: [event dicts]}.
+    """
+    with get_connection() as conn:
+        if job_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_events WHERE job_id = ? ORDER BY noted_at",
+                (job_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        else:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_events ORDER BY job_id, noted_at"
+            ).fetchall()
+            by_job = {}
+            for row in rows:
+                d = dict(row)
+                jid = d["job_id"]
+                if jid not in by_job:
+                    by_job[jid] = []
+                by_job[jid].append(d)
+            return by_job
