@@ -121,11 +121,24 @@ def _init_postgres(conn):
             seniority_status            TEXT,
             freshness_status            TEXT,
             education_status            TEXT,
-            work_authorization_status   TEXT
+            work_authorization_status   TEXT,
+            role_fit_score              REAL,
+            role_fit_level              TEXT,
+            experience_fit_score        REAL,
+            experience_fit_level        TEXT,
+            skill_fit_score             REAL,
+            skill_fit_level             TEXT,
+            portfolio_fit_score         REAL,
+            portfolio_fit_level         TEXT,
+            domain_fit_score            REAL,
+            domain_fit_level            TEXT,
+            overall_fit_score           REAL,
+            overall_fit_level           TEXT,
+            fit_evidence                TEXT
         )
         """
     )
-    # Add eligibility columns to pre-existing tables (idempotent via IF NOT EXISTS)
+    # Add eligibility + fit columns to pre-existing tables (idempotent)
     for col, typedef in [
         ("eligibility_status", "TEXT"),
         ("eligibility_reason", "TEXT"),
@@ -137,6 +150,19 @@ def _init_postgres(conn):
         ("freshness_status", "TEXT"),
         ("education_status", "TEXT"),
         ("work_authorization_status", "TEXT"),
+        ("role_fit_score", "REAL"),
+        ("role_fit_level", "TEXT"),
+        ("experience_fit_score", "REAL"),
+        ("experience_fit_level", "TEXT"),
+        ("skill_fit_score", "REAL"),
+        ("skill_fit_level", "TEXT"),
+        ("portfolio_fit_score", "REAL"),
+        ("portfolio_fit_level", "TEXT"),
+        ("domain_fit_score", "REAL"),
+        ("domain_fit_level", "TEXT"),
+        ("overall_fit_score", "REAL"),
+        ("overall_fit_level", "TEXT"),
+        ("fit_evidence", "TEXT"),
     ]:
         try:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
@@ -185,7 +211,20 @@ def _init_sqlite(conn):
             seniority_status            TEXT,
             freshness_status            TEXT,
             education_status            TEXT,
-            work_authorization_status   TEXT
+            work_authorization_status   TEXT,
+            role_fit_score              REAL,
+            role_fit_level              TEXT,
+            experience_fit_score        REAL,
+            experience_fit_level        TEXT,
+            skill_fit_score             REAL,
+            skill_fit_level             TEXT,
+            portfolio_fit_score         REAL,
+            portfolio_fit_level         TEXT,
+            domain_fit_score            REAL,
+            domain_fit_level            TEXT,
+            overall_fit_score           REAL,
+            overall_fit_level           TEXT,
+            fit_evidence                TEXT
         )
         """
     )
@@ -245,6 +284,32 @@ def _init_sqlite(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN education_status TEXT")
     if "work_authorization_status" not in existing_columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN work_authorization_status TEXT")
+    if "role_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN role_fit_score REAL")
+    if "role_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN role_fit_level TEXT")
+    if "experience_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN experience_fit_score REAL")
+    if "experience_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN experience_fit_level TEXT")
+    if "skill_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN skill_fit_score REAL")
+    if "skill_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN skill_fit_level TEXT")
+    if "portfolio_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN portfolio_fit_score REAL")
+    if "portfolio_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN portfolio_fit_level TEXT")
+    if "domain_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN domain_fit_score REAL")
+    if "domain_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN domain_fit_level TEXT")
+    if "overall_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN overall_fit_score REAL")
+    if "overall_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN overall_fit_level TEXT")
+    if "fit_evidence" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN fit_evidence TEXT")
 
 
 def save_job(conn, job):
@@ -349,6 +414,58 @@ def update_eligibility(conn, comment_id, result):
             result["freshness_status"],
             result["education_status"],
             result["work_authorization_status"],
+            comment_id,
+        ),
+    )
+
+
+def fetch_jobs_needing_fit_assessment():
+    """Return ELIGIBLE/REVIEW jobs that have not yet been scored by fit assessment."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+              AND role_fit_score IS NULL
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_fit_assessment(conn, comment_id, result):
+    """Write all fit assessment scores and evidence back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            role_fit_score          = ?,
+            role_fit_level          = ?,
+            experience_fit_score    = ?,
+            experience_fit_level    = ?,
+            skill_fit_score         = ?,
+            skill_fit_level         = ?,
+            portfolio_fit_score     = ?,
+            portfolio_fit_level     = ?,
+            domain_fit_score        = ?,
+            domain_fit_level        = ?,
+            overall_fit_score       = ?,
+            overall_fit_level       = ?,
+            fit_evidence            = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["role_fit_score"],
+            result["role_fit_level"],
+            result["experience_fit_score"],
+            result["experience_fit_level"],
+            result["skill_fit_score"],
+            result["skill_fit_level"],
+            result["portfolio_fit_score"],
+            result["portfolio_fit_level"],
+            result["domain_fit_score"],
+            result["domain_fit_level"],
+            result["overall_fit_score"],
+            result["overall_fit_level"],
+            result["fit_evidence"],
             comment_id,
         ),
     )

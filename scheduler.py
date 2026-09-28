@@ -19,6 +19,8 @@ PIPELINE_STEPS = [
     "scraper_internshala.py",
     # Eligibility gate runs after all scrapers; rejects are excluded from enrichment onward
     "run_eligibility.py",
+    # Fit Assessment scores ELIGIBLE/REVIEW jobs before enrichment runs
+    "run_fit_assessment.py",
     "enricher_snov.py",
     "drafter_claude.py",
     "telegram_bot.py",
@@ -77,6 +79,7 @@ def run_pipeline():
         run_step("scraper_iimjobs.py")
         run_step("scraper_yc.py")
         run_step("run_eligibility.py")
+        run_step("run_fit_assessment.py")
 
     sync_db_to_railway()
 
