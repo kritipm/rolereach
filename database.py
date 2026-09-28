@@ -86,35 +86,164 @@ def init_db():
             _init_postgres(conn)
         else:
             _init_sqlite(conn)
+        _init_pipeline_events(conn)
         conn.commit()
+
+
+def _init_pipeline_events(conn):
+    if conn.is_postgres:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pipeline_events (
+                id         BIGSERIAL PRIMARY KEY,
+                job_id     BIGINT NOT NULL,
+                event_type TEXT NOT NULL,
+                noted_at   TEXT NOT NULL,
+                UNIQUE (job_id, event_type)
+            )
+            """
+        )
+    else:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pipeline_events (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id     INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                noted_at   TEXT NOT NULL,
+                UNIQUE (job_id, event_type)
+            )
+            """
+        )
 
 
 def _init_postgres(conn):
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS jobs (
-            comment_id       BIGINT PRIMARY KEY,
-            thread_id        BIGINT NOT NULL,
-            author           TEXT,
-            posted_at        TEXT,
-            matched_keyword  TEXT,
-            text             TEXT NOT NULL,
-            url              TEXT,
-            company_url      TEXT,
-            verified         INTEGER NOT NULL DEFAULT 0,
-            source           TEXT NOT NULL DEFAULT 'hackernews',
-            external_id      TEXT,
-            hm_name          TEXT,
-            hm_email         TEXT,
-            smtp_guesses     TEXT,
-            company_linkedin TEXT,
-            email_draft      TEXT,
-            notified         INTEGER NOT NULL DEFAULT 0,
-            experience_range TEXT,
-            description      TEXT
+            comment_id                  BIGINT PRIMARY KEY,
+            thread_id                   BIGINT NOT NULL,
+            author                      TEXT,
+            posted_at                   TEXT,
+            matched_keyword             TEXT,
+            text                        TEXT NOT NULL,
+            url                         TEXT,
+            company_url                 TEXT,
+            verified                    INTEGER NOT NULL DEFAULT 0,
+            source                      TEXT NOT NULL DEFAULT 'hackernews',
+            external_id                 TEXT,
+            hm_name                     TEXT,
+            hm_email                    TEXT,
+            smtp_guesses                TEXT,
+            company_linkedin            TEXT,
+            email_draft                 TEXT,
+            notified                    INTEGER NOT NULL DEFAULT 0,
+            experience_range            TEXT,
+            description                 TEXT,
+            eligibility_status          TEXT,
+            eligibility_reason          TEXT,
+            role_category               TEXT,
+            experience_status           TEXT,
+            location_status             TEXT,
+            employment_status           TEXT,
+            seniority_status            TEXT,
+            freshness_status            TEXT,
+            education_status            TEXT,
+            work_authorization_status   TEXT,
+            role_fit_score              REAL,
+            role_fit_level              TEXT,
+            experience_fit_score        REAL,
+            experience_fit_level        TEXT,
+            skill_fit_score             REAL,
+            skill_fit_level             TEXT,
+            portfolio_fit_score         REAL,
+            portfolio_fit_level         TEXT,
+            domain_fit_score            REAL,
+            domain_fit_level            TEXT,
+            overall_fit_score           REAL,
+            overall_fit_level           TEXT,
+            fit_evidence                TEXT,
+            priority_score              REAL,
+            priority_level              TEXT,
+            priority_fit_score_used     REAL,
+            priority_freshness_score    REAL,
+            priority_access_points      INTEGER,
+            priority_access_score       REAL,
+            product_person_linkedin     TEXT,
+            product_person_name         TEXT,
+            product_person_role         TEXT,
+            product_folks_linkedin      TEXT,
+            attack_access_level         TEXT,
+            attack_priority             TEXT,
+            attack_intensity            TEXT,
+            attack_available_routes     TEXT,
+            attack_primary_route        TEXT,
+            attack_first_action         TEXT,
+            attack_action_sequence      TEXT,
+            attack_primary_contact      TEXT,
+            attack_primary_contact_linkedin TEXT,
+            attack_attributed_email     TEXT,
+            attack_job_application_url  TEXT,
+            attack_reason               TEXT,
+            linkedin_draft              TEXT,
+            execution_packet            TEXT
         )
         """
     )
+    # Add eligibility + fit + priority + attack + execution columns to pre-existing tables (idempotent)
+    for col, typedef in [
+        ("eligibility_status", "TEXT"),
+        ("eligibility_reason", "TEXT"),
+        ("role_category", "TEXT"),
+        ("experience_status", "TEXT"),
+        ("location_status", "TEXT"),
+        ("employment_status", "TEXT"),
+        ("seniority_status", "TEXT"),
+        ("freshness_status", "TEXT"),
+        ("education_status", "TEXT"),
+        ("work_authorization_status", "TEXT"),
+        ("role_fit_score", "REAL"),
+        ("role_fit_level", "TEXT"),
+        ("experience_fit_score", "REAL"),
+        ("experience_fit_level", "TEXT"),
+        ("skill_fit_score", "REAL"),
+        ("skill_fit_level", "TEXT"),
+        ("portfolio_fit_score", "REAL"),
+        ("portfolio_fit_level", "TEXT"),
+        ("domain_fit_score", "REAL"),
+        ("domain_fit_level", "TEXT"),
+        ("overall_fit_score", "REAL"),
+        ("overall_fit_level", "TEXT"),
+        ("fit_evidence", "TEXT"),
+        ("priority_score", "REAL"),
+        ("priority_level", "TEXT"),
+        ("priority_fit_score_used", "REAL"),
+        ("priority_freshness_score", "REAL"),
+        ("priority_access_points", "INTEGER"),
+        ("priority_access_score", "REAL"),
+        ("product_person_linkedin", "TEXT"),
+        ("product_person_name", "TEXT"),
+        ("product_person_role", "TEXT"),
+        ("product_folks_linkedin", "TEXT"),
+        ("attack_access_level", "TEXT"),
+        ("attack_priority", "TEXT"),
+        ("attack_intensity", "TEXT"),
+        ("attack_available_routes", "TEXT"),
+        ("attack_primary_route", "TEXT"),
+        ("attack_first_action", "TEXT"),
+        ("attack_action_sequence", "TEXT"),
+        ("attack_primary_contact", "TEXT"),
+        ("attack_primary_contact_linkedin", "TEXT"),
+        ("attack_attributed_email", "TEXT"),
+        ("attack_job_application_url", "TEXT"),
+        ("attack_reason", "TEXT"),
+        ("linkedin_draft", "TEXT"),
+        ("execution_packet", "TEXT"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typedef}")
+        except Exception:
+            pass  # column already exists
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS user_actions (
@@ -130,25 +259,72 @@ def _init_sqlite(conn):
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS jobs (
-            comment_id INTEGER PRIMARY KEY,
-            thread_id INTEGER NOT NULL,
-            author TEXT,
-            posted_at TEXT,
-            matched_keyword TEXT,
-            text TEXT NOT NULL,
-            url TEXT,
-            company_url TEXT,
-            verified INTEGER NOT NULL DEFAULT 0,
-            source TEXT NOT NULL DEFAULT 'hackernews',
-            external_id TEXT,
-            hm_name TEXT,
-            hm_email TEXT,
-            smtp_guesses TEXT,
-            company_linkedin TEXT,
-            email_draft TEXT,
-            notified INTEGER NOT NULL DEFAULT 0,
-            experience_range TEXT,
-            description TEXT
+            comment_id                  INTEGER PRIMARY KEY,
+            thread_id                   INTEGER NOT NULL,
+            author                      TEXT,
+            posted_at                   TEXT,
+            matched_keyword             TEXT,
+            text                        TEXT NOT NULL,
+            url                         TEXT,
+            company_url                 TEXT,
+            verified                    INTEGER NOT NULL DEFAULT 0,
+            source                      TEXT NOT NULL DEFAULT 'hackernews',
+            external_id                 TEXT,
+            hm_name                     TEXT,
+            hm_email                    TEXT,
+            smtp_guesses                TEXT,
+            company_linkedin            TEXT,
+            email_draft                 TEXT,
+            notified                    INTEGER NOT NULL DEFAULT 0,
+            experience_range            TEXT,
+            description                 TEXT,
+            eligibility_status          TEXT,
+            eligibility_reason          TEXT,
+            role_category               TEXT,
+            experience_status           TEXT,
+            location_status             TEXT,
+            employment_status           TEXT,
+            seniority_status            TEXT,
+            freshness_status            TEXT,
+            education_status            TEXT,
+            work_authorization_status   TEXT,
+            role_fit_score              REAL,
+            role_fit_level              TEXT,
+            experience_fit_score        REAL,
+            experience_fit_level        TEXT,
+            skill_fit_score             REAL,
+            skill_fit_level             TEXT,
+            portfolio_fit_score         REAL,
+            portfolio_fit_level         TEXT,
+            domain_fit_score            REAL,
+            domain_fit_level            TEXT,
+            overall_fit_score           REAL,
+            overall_fit_level           TEXT,
+            fit_evidence                TEXT,
+            priority_score              REAL,
+            priority_level              TEXT,
+            priority_fit_score_used     REAL,
+            priority_freshness_score    REAL,
+            priority_access_points      INTEGER,
+            priority_access_score       REAL,
+            product_person_linkedin     TEXT,
+            product_person_name         TEXT,
+            product_person_role         TEXT,
+            product_folks_linkedin      TEXT,
+            attack_access_level         TEXT,
+            attack_priority             TEXT,
+            attack_intensity            TEXT,
+            attack_available_routes     TEXT,
+            attack_primary_route        TEXT,
+            attack_first_action         TEXT,
+            attack_action_sequence      TEXT,
+            attack_primary_contact      TEXT,
+            attack_primary_contact_linkedin TEXT,
+            attack_attributed_email     TEXT,
+            attack_job_application_url  TEXT,
+            attack_reason               TEXT,
+            linkedin_draft              TEXT,
+            execution_packet            TEXT
         )
         """
     )
@@ -188,6 +364,100 @@ def _init_sqlite(conn):
         conn.execute("ALTER TABLE jobs ADD COLUMN experience_range TEXT")
     if "description" not in existing_columns:
         conn.execute("ALTER TABLE jobs ADD COLUMN description TEXT")
+    if "eligibility_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN eligibility_status TEXT")
+    if "eligibility_reason" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN eligibility_reason TEXT")
+    if "role_category" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN role_category TEXT")
+    if "experience_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN experience_status TEXT")
+    if "location_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN location_status TEXT")
+    if "employment_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN employment_status TEXT")
+    if "seniority_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN seniority_status TEXT")
+    if "freshness_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN freshness_status TEXT")
+    if "education_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN education_status TEXT")
+    if "work_authorization_status" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN work_authorization_status TEXT")
+    if "role_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN role_fit_score REAL")
+    if "role_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN role_fit_level TEXT")
+    if "experience_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN experience_fit_score REAL")
+    if "experience_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN experience_fit_level TEXT")
+    if "skill_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN skill_fit_score REAL")
+    if "skill_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN skill_fit_level TEXT")
+    if "portfolio_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN portfolio_fit_score REAL")
+    if "portfolio_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN portfolio_fit_level TEXT")
+    if "domain_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN domain_fit_score REAL")
+    if "domain_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN domain_fit_level TEXT")
+    if "overall_fit_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN overall_fit_score REAL")
+    if "overall_fit_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN overall_fit_level TEXT")
+    if "fit_evidence" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN fit_evidence TEXT")
+    if "priority_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_score REAL")
+    if "priority_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_level TEXT")
+    if "priority_fit_score_used" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_fit_score_used REAL")
+    if "priority_freshness_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_freshness_score REAL")
+    if "priority_access_points" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_access_points INTEGER")
+    if "priority_access_score" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority_access_score REAL")
+    if "product_person_linkedin" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_person_linkedin TEXT")
+    if "product_person_name" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_person_name TEXT")
+    if "product_person_role" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_person_role TEXT")
+    if "product_folks_linkedin" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN product_folks_linkedin TEXT")
+    if "attack_access_level" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_access_level TEXT")
+    if "attack_priority" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_priority TEXT")
+    if "attack_intensity" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_intensity TEXT")
+    if "attack_available_routes" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_available_routes TEXT")
+    if "attack_primary_route" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_primary_route TEXT")
+    if "attack_first_action" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_first_action TEXT")
+    if "attack_action_sequence" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_action_sequence TEXT")
+    if "attack_primary_contact" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_primary_contact TEXT")
+    if "attack_primary_contact_linkedin" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_primary_contact_linkedin TEXT")
+    if "attack_attributed_email" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_attributed_email TEXT")
+    if "attack_job_application_url" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_job_application_url TEXT")
+    if "attack_reason" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN attack_reason TEXT")
+    if "linkedin_draft" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN linkedin_draft TEXT")
+    if "execution_packet" not in existing_columns:
+        conn.execute("ALTER TABLE jobs ADD COLUMN execution_packet TEXT")
 
 
 def save_job(conn, job):
@@ -255,12 +525,107 @@ def fetch_all_jobs():
         return [dict(row) for row in rows]
 
 
+def fetch_unchecked_jobs():
+    """Return all jobs that have not yet been assessed by the eligibility gate."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE eligibility_status IS NULL"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_eligibility(conn, comment_id, result):
+    """Write eligibility assessment fields back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            eligibility_status        = ?,
+            eligibility_reason        = ?,
+            role_category             = ?,
+            experience_status         = ?,
+            location_status           = ?,
+            employment_status         = ?,
+            seniority_status          = ?,
+            freshness_status          = ?,
+            education_status          = ?,
+            work_authorization_status = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["eligibility_status"],
+            result["eligibility_reason"],
+            result["role_category"],
+            result["experience_status"],
+            result["location_status"],
+            result["employment_status"],
+            result["seniority_status"],
+            result["freshness_status"],
+            result["education_status"],
+            result["work_authorization_status"],
+            comment_id,
+        ),
+    )
+
+
+def fetch_jobs_needing_fit_assessment():
+    """Return ELIGIBLE/REVIEW jobs that have not yet been scored by fit assessment."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+              AND role_fit_score IS NULL
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_fit_assessment(conn, comment_id, result):
+    """Write all fit assessment scores and evidence back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            role_fit_score          = ?,
+            role_fit_level          = ?,
+            experience_fit_score    = ?,
+            experience_fit_level    = ?,
+            skill_fit_score         = ?,
+            skill_fit_level         = ?,
+            portfolio_fit_score     = ?,
+            portfolio_fit_level     = ?,
+            domain_fit_score        = ?,
+            domain_fit_level        = ?,
+            overall_fit_score       = ?,
+            overall_fit_level       = ?,
+            fit_evidence            = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["role_fit_score"],
+            result["role_fit_level"],
+            result["experience_fit_score"],
+            result["experience_fit_level"],
+            result["skill_fit_score"],
+            result["skill_fit_level"],
+            result["portfolio_fit_score"],
+            result["portfolio_fit_level"],
+            result["domain_fit_score"],
+            result["domain_fit_level"],
+            result["overall_fit_score"],
+            result["overall_fit_level"],
+            result["fit_evidence"],
+            comment_id,
+        ),
+    )
+
+
 def fetch_jobs_needing_enrichment(limit=None):
     with get_connection() as conn:
         query = """
             SELECT * FROM jobs
             WHERE company_url IS NOT NULL AND TRIM(company_url) != ''
               AND (hm_email IS NULL OR TRIM(hm_email) = '')
+              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
         """
         if limit is not None:
             query += f" LIMIT {int(limit)}"
@@ -309,14 +674,16 @@ def fetch_jobs_needing_draft():
             SELECT * FROM jobs
             WHERE hm_email IS NOT NULL AND TRIM(hm_email) != ''
               AND (email_draft IS NULL OR TRIM(email_draft) = '')
+              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
         """
         return [dict(row) for row in conn.execute(query).fetchall()]
 
 
 def update_email_draft(comment_id, email_draft):
     with get_connection() as conn:
+        # Reset execution_packet so Layer 5 rebuilds it with the new email content
         conn.execute(
-            "UPDATE jobs SET email_draft = ? WHERE comment_id = ?",
+            "UPDATE jobs SET email_draft = ?, execution_packet = NULL WHERE comment_id = ?",
             (email_draft, comment_id),
         )
         conn.commit()
@@ -326,10 +693,21 @@ def fetch_unnotified_jobs(source=None):
     with get_connection() as conn:
         if source:
             rows = conn.execute(
-                "SELECT * FROM jobs WHERE notified = 0 AND source = ?", (source,)
+                """
+                SELECT * FROM jobs
+                WHERE notified = 0 AND source = ?
+                  AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+                """,
+                (source,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM jobs WHERE notified = 0").fetchall()
+            rows = conn.execute(
+                """
+                SELECT * FROM jobs
+                WHERE notified = 0
+                  AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+                """
+            ).fetchall()
         return [dict(row) for row in rows]
 
 
@@ -356,3 +734,187 @@ def fetch_all_job_actions():
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM user_actions").fetchall()
         return {row["job_id"]: dict(row) for row in rows}
+
+
+def fetch_jobs_needing_attack_route():
+    """Return ELIGIBLE/REVIEW jobs that have a priority level but no attack route yet."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+              AND priority_level IS NOT NULL
+              AND attack_access_level IS NULL
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_attack_route(conn, comment_id, result):
+    """Write attack route assessment back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            attack_access_level             = ?,
+            attack_priority                 = ?,
+            attack_intensity                = ?,
+            attack_available_routes         = ?,
+            attack_primary_route            = ?,
+            attack_first_action             = ?,
+            attack_action_sequence          = ?,
+            attack_primary_contact          = ?,
+            attack_primary_contact_linkedin = ?,
+            attack_attributed_email         = ?,
+            attack_job_application_url      = ?,
+            attack_reason                   = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["attack_access_level"],
+            result["attack_priority"],
+            result["attack_intensity"],
+            result["attack_available_routes"],
+            result["attack_primary_route"],
+            result["attack_first_action"],
+            result["attack_action_sequence"],
+            result["attack_primary_contact"],
+            result["attack_primary_contact_linkedin"],
+            result["attack_attributed_email"],
+            result["attack_job_application_url"],
+            result["attack_reason"],
+            comment_id,
+        ),
+    )
+
+
+def fetch_jobs_needing_execution_packet():
+    """Return jobs that have an attack plan but no execution packet yet."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE attack_access_level IS NOT NULL
+              AND execution_packet IS NULL
+              AND (eligibility_status IS NULL OR eligibility_status != 'REJECT')
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_execution_packet(conn, comment_id, result):
+    """Write execution packet and LinkedIn draft back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            linkedin_draft   = ?,
+            execution_packet = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["linkedin_draft"],
+            result["execution_packet"],
+            comment_id,
+        ),
+    )
+
+
+def fetch_jobs_needing_priority():
+    """Return ELIGIBLE/REVIEW jobs with completed fit assessment but no priority score."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM jobs
+            WHERE eligibility_status IN ('ELIGIBLE', 'REVIEW')
+              AND role_fit_score IS NOT NULL
+              AND priority_score IS NULL
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def update_priority(conn, comment_id, result):
+    """Write priority score and component inputs back to a job row."""
+    conn.execute(
+        """
+        UPDATE jobs SET
+            priority_score           = ?,
+            priority_level           = ?,
+            priority_fit_score_used  = ?,
+            priority_freshness_score = ?,
+            priority_access_points   = ?,
+            priority_access_score    = ?
+        WHERE comment_id = ?
+        """,
+        (
+            result["priority_score"],
+            result["priority_level"],
+            result["priority_fit_score_used"],
+            result["priority_freshness_score"],
+            result["priority_access_points"],
+            result["priority_access_score"],
+            comment_id,
+        ),
+    )
+
+
+# ---------- Pipeline events (Layer 6) ----------
+
+def upsert_pipeline_event(job_id, event_type, noted_at):
+    """Insert or replace a pipeline event for a job."""
+    with get_connection() as conn:
+        if conn.is_postgres:
+            conn.execute(
+                """
+                INSERT INTO pipeline_events (job_id, event_type, noted_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (job_id, event_type) DO UPDATE SET noted_at = EXCLUDED.noted_at
+                """,
+                (job_id, event_type, noted_at),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO pipeline_events (job_id, event_type, noted_at)
+                VALUES (?, ?, ?)
+                """,
+                (job_id, event_type, noted_at),
+            )
+        conn.commit()
+
+
+def delete_pipeline_event(job_id, event_type):
+    """Remove a pipeline event for a job."""
+    with get_connection() as conn:
+        conn.execute(
+            "DELETE FROM pipeline_events WHERE job_id = ? AND event_type = ?",
+            (job_id, event_type),
+        )
+        conn.commit()
+
+
+def fetch_pipeline_events(job_id=None):
+    """
+    Fetch pipeline events.
+
+    With job_id: returns list of event dicts for that job.
+    Without job_id: returns dict {job_id: [event dicts]}.
+    """
+    with get_connection() as conn:
+        if job_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_events WHERE job_id = ? ORDER BY noted_at",
+                (job_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        else:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_events ORDER BY job_id, noted_at"
+            ).fetchall()
+            by_job = {}
+            for row in rows:
+                d = dict(row)
+                jid = d["job_id"]
+                if jid not in by_job:
+                    by_job[jid] = []
+                by_job[jid].append(d)
+            return by_job

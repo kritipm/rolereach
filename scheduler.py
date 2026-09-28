@@ -17,8 +17,18 @@ PIPELINE_STEPS = [
     "scraper_google_jobs.py",
     "scraper_jsearch.py",
     "scraper_internshala.py",
+    # Eligibility gate runs after all scrapers; rejects are excluded from enrichment onward
+    "run_eligibility.py",
+    # Fit Assessment scores ELIGIBLE/REVIEW jobs before enrichment runs
+    "run_fit_assessment.py",
+    # Priority Engine ranks scored jobs by Fit + Freshness + Access
+    "run_priority.py",
+    # Attack Route determines how to approach each eligible opportunity
+    "run_attack_route.py",
     "enricher_snov.py",
     "drafter_claude.py",
+    # Execution Packet runs after drafter so email_draft is available in the packet
+    "run_execution_packet.py",
     "telegram_bot.py",
 ]
 
@@ -74,6 +84,11 @@ def run_pipeline():
     if datetime.now().weekday() in [0, 2, 4]:
         run_step("scraper_iimjobs.py")
         run_step("scraper_yc.py")
+        run_step("run_eligibility.py")
+        run_step("run_fit_assessment.py")
+        run_step("run_priority.py")
+        run_step("run_attack_route.py")
+        run_step("run_execution_packet.py")
 
     sync_db_to_railway()
 
