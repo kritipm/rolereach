@@ -95,11 +95,34 @@ def _parse_max_years(text):
 
 def _title_from(job):
     text = job.get("text", "") or ""
+    source = job.get("source", "")
+    if source == "hackernews":
+        # HN format: first line is "Company | Job Title | Location\n..."
+        first_line = text.split("\n", 1)[0]
+        parts = first_line.split("|")
+        return parts[1].strip() if len(parts) > 1 else first_line.strip()
     return text.split("|")[0].strip()
+
+
+def _description_from(job):
+    """Return the best available description text for this job."""
+    desc = job.get("description", "") or ""
+    if desc:
+        return desc
+    # HN jobs store all content in text (no separate description field)
+    if job.get("source") == "hackernews":
+        return job.get("text", "") or ""
+    return ""
 
 
 def _location_from(job):
     text = job.get("text", "") or ""
+    source = job.get("source", "")
+    if source == "hackernews":
+        # HN format: "Company | Title | Location\n..."
+        first_line = text.split("\n", 1)[0]
+        parts = first_line.split("|")
+        return parts[2].strip() if len(parts) > 2 else ""
     parts = text.split("|")
     return parts[1].strip() if len(parts) >= 2 else ""
 
@@ -252,7 +275,7 @@ def check_eligibility(job):
         work_authorization_status   : ELIGIBLE | REJECT
     """
     title = _title_from(job)
-    description = job.get("description", "") or ""
+    description = _description_from(job)
     experience_range = job.get("experience_range", "") or ""
 
     seniority_st, seniority_reason = _seniority(title)

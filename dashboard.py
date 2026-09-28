@@ -418,6 +418,97 @@ def api_pipeline():
     )
 
 
+# ---------- API: Admin diagnostics & re-evaluation (passkey-gated) ----------
+
+
+@app.route("/api/admin/diagnostics")
+def api_admin_diagnostics():
+    err = _require_passkey()
+    if err:
+        return err
+
+    import eligibility as elig_module
+
+    database.init_db()
+    with database.get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) as cnt FROM jobs").fetchone()["cnt"]
+
+        status_rows = conn.execute(
+            "SELECT eligibility_status, COUNT(*) as cnt FROM jobs GROUP BY eligibility_status ORDER BY cnt DESC"
+        ).fetchall()
+        status_dist = {(r["eligibility_status"] or "NULL"): r["cnt"] for r in status_rows}
+
+        reason_rows = conn.execute(
+            "SELECT eligibility_reason, COUNT(*) as cnt FROM jobs "
+            "WHERE eligibility_status = 'REJECT' GROUP BY eligibility_reason ORDER BY cnt DESC LIMIT 20"
+        ).fetchall()
+        top_reasons = [{"reason": r["eligibility_reason"], "count": r["cnt"]} for r in reason_rows]
+
+        source_rows = conn.execute(
+            "SELECT source, COUNT(*) as cnt FROM jobs GROUP BY source ORDER BY cnt DESC"
+        ).fetchall()
+        by_source = {r["source"]: r["cnt"] for r in source_rows}
+
+        null_rows = conn.execute(
+            "SELECT source, COUNT(*) as cnt FROM jobs WHERE eligibility_status IS NULL GROUP BY source"
+        ).fetchall()
+        null_by_source = {r["source"]: r["cnt"] for r in null_rows}
+
+        # Sample: 5 NULL jobs with their computed (not yet stored) eligibility decision
+        samples_raw = conn.execute(
+            "SELECT * FROM jobs WHERE eligibility_status IS NULL LIMIT 5"
+        ).fetchall()
+        if not samples_raw:
+            samples_raw = conn.execute(
+                "SELECT * FROM jobs WHERE eligibility_status = 'REJECT' LIMIT 5"
+            ).fetchall()
+
+        samples = []
+        for row in samples_raw:
+            job = dict(row)
+            result = elig_module.check_eligibility(job)
+            text_preview = (job.get("text") or "")[:120].replace("\n", " ")
+            samples.append({
+                "comment_id": job["comment_id"],
+                "source": job["source"],
+                "text_preview": text_preview,
+                "current_status": job.get("eligibility_status"),
+                "computed_status": result["eligibility_status"],
+                "computed_reason": result["eligibility_reason"],
+                "role_category": result["role_category"],
+                "seniority_status": result["seniority_status"],
+                "experience_range": job.get("experience_range"),
+            })
+
+    return jsonify({
+        "total": total,
+        "status_distribution": status_dist,
+        "by_source": by_source,
+        "null_by_source": null_by_source,
+        "top_rejection_reasons": top_reasons,
+        "samples": samples,
+    })
+
+
+@app.route("/api/admin/run-eligibility", methods=["POST"])
+def api_admin_run_eligibility():
+    err = _require_passkey()
+    if err:
+        return err
+
+    payload = request.get_json(force=True, silent=True) or {}
+    rerun_all = bool(payload.get("rerun_all", False))
+
+    import run_eligibility
+    counts = run_eligibility.run(rerun_all=rerun_all)
+
+    return jsonify({
+        "status": "ok",
+        "rerun_all": rerun_all,
+        "counts": counts or {},
+    })
+
+
 # ---------- API: DB sync (called by scheduler.py after each pipeline run) ----------
 
 

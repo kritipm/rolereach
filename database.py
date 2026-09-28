@@ -535,6 +535,15 @@ def fetch_unchecked_jobs():
         return [dict(row) for row in rows]
 
 
+def fetch_all_jobs_for_eligibility():
+    """Return ALL jobs regardless of eligibility status (for re-evaluation runs)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs ORDER BY posted_at DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
 def update_eligibility(conn, comment_id, result):
     """Write eligibility assessment fields back to a job row."""
     conn.execute(
