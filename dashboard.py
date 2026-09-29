@@ -191,9 +191,10 @@ def api_opportunities():
     with database.get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM jobs"
-            " WHERE eligibility_status IN ('ELIGIBLE','REVIEW')"
-            " AND attack_priority IS NOT NULL"
+            " WHERE (eligibility_status = 'ELIGIBLE' AND attack_priority IS NOT NULL)"
+            "    OR (eligibility_status = 'REVIEW')"
             " ORDER BY"
+            " CASE eligibility_status WHEN 'ELIGIBLE' THEN 0 ELSE 1 END,"
             " CASE attack_priority WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END,"
             " COALESCE(priority_score, 0) DESC"
         ).fetchall()
@@ -1121,6 +1122,7 @@ DASHBOARD_HTML = r"""
   --p1: #C830F0; --p1-dark: #180828; --p1-border: #2C0A42; --p1-glow: rgba(200,48,240,0.35);
   --p2: #8060C0; --p2-dark: #140C2C; --p2-border: #201848;
   --p3: #606070; --p3-dark: rgba(80,80,96,0.15); --p3-border: #3A3A4C;
+  --review: #DDB0FF; --review-dark: #140C2C; --review-border: #201848;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh;}
@@ -1325,6 +1327,90 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
 
 .loading{text-align:center;padding:50px 20px;color:var(--text-dim);font-size:13px;}
 .empty{text-align:center;padding:30px 20px;color:var(--text-dim);font-size:13px;}
+
+/* state badge variants for clean class names */
+.s-offer{background:#1A1400;border:1px solid #504000;color:#F0C040;}
+.s-interview{background:var(--p1-dark);border:1px solid var(--p1-border);color:var(--p1);box-shadow:0 0 8px var(--p1-glow);}
+.s-conversation,.s-responded{background:var(--green-dark);border:1px solid var(--green-border);color:var(--green);}
+.s-rejected{background:var(--red-dark);border:1px solid var(--red-border);color:var(--red);}
+.s-followup-due{background:var(--red-dark);border:1px solid var(--red-border);color:var(--red);animation:pulseRed 2s infinite;}
+.s-no-response{background:rgba(60,20,30,0.5);border:1px solid var(--red-border);color:#A04060;}
+.s-waiting{background:var(--yellow-dark);border:1px solid var(--yellow-border);color:var(--yellow);}
+.s-app-sent{background:var(--lavender-dark);border:1px solid var(--lavender-border);color:var(--lavender);}
+.s-not-started{background:transparent;border:1px solid var(--border);color:var(--text-dim);}
+
+/* ---- AGENT extras ---- */
+.p-pill.review.active,.p-pill.review:hover{background:var(--review-dark);border-color:var(--review-border);color:var(--review);}
+.opp-freshness{font-size:11px;color:var(--text-dim);}
+.opp-why{font-size:11.5px;color:var(--text-muted);line-height:1.4;margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.opp-seq{display:flex;gap:4px;align-items:center;margin-top:4px;flex-wrap:wrap;}
+.seq-tag{font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(200,48,240,0.08);border:1px solid var(--p1-border);color:var(--p1);}
+.seq-arr{font-size:10px;color:var(--text-dim);}
+.review-chip-card{display:inline-flex;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;background:var(--review-dark);border:1px solid var(--review-border);color:var(--review);}
+.access-badge{display:inline-flex;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:800;border:1px solid;}
+.access-HIGH{background:var(--p1-dark);border-color:var(--p1-border);color:var(--p1);}
+.access-MEDIUM{background:var(--p2-dark);border-color:var(--p2-border);color:var(--p2);}
+.access-LOW{background:var(--p3-dark);border-color:var(--p3-border);color:var(--text-muted);}
+.access-NONE{background:transparent;border-color:var(--border);color:var(--text-dim);}
+/* detail sections */
+.detail-meta-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--text-muted);}
+.detail-meta-dot{color:var(--text-dim);}
+.contact-block{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;}
+.contact-name{font-size:13px;font-weight:700;color:var(--text-primary);}
+.contact-role{font-size:12px;color:var(--text-muted);margin-bottom:4px;}
+.contact-email{font-size:12px;color:var(--text-muted);font-family:"SF Mono",Consolas,monospace;}
+.detail-collapse-hdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:4px 0;}
+.detail-collapse-hdr:hover{color:var(--lavender);}
+.detail-collapse-icon{font-size:11px;color:var(--text-dim);transition:transform 0.15s;}
+.detail-collapse-body{display:none;margin-top:10px;font-size:12px;color:var(--text-secondary);line-height:1.65;white-space:pre-wrap;}
+.detail-collapse-body.open{display:block;}
+/* review detail */
+.review-banner{background:var(--review-dark);border:1px solid var(--review-border);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+.review-banner-title{font-size:11px;font-weight:800;color:var(--review);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;}
+.review-banner-text{font-size:13px;color:var(--text-secondary);line-height:1.5;}
+/* ---- ACTIONS extras ---- */
+.group-title.completed{color:var(--text-dim);}
+.group-count.completed{background:rgba(80,80,96,0.2);border:1px solid var(--border);color:var(--text-dim);}
+.catchup{text-align:center;padding:48px 20px;color:var(--text-dim);font-size:14px;}
+.catchup-icon{font-size:28px;margin-bottom:10px;}
+/* ---- PIPELINE extras ---- */
+.funnel-full{margin-bottom:24px;}
+.funnel-row{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding-bottom:8px;margin-bottom:8px;}
+.funnel-stage{flex:1;min-width:90px;background:var(--card);border:1px solid var(--border);border-right:none;padding:14px 12px;cursor:pointer;transition:background 0.15s,border-color 0.15s;position:relative;}
+.funnel-stage:first-child{border-radius:10px 0 0 10px;}
+.funnel-stage:last-child{border-right:1px solid var(--border);border-radius:0 10px 10px 0;}
+.funnel-stage:hover{background:var(--card-hover);}
+.funnel-stage.active{background:var(--p1-dark);border-color:var(--p1-border);}
+.funnel-stage.active .funnel-sval{color:var(--p1);}
+.funnel-sval{font-size:22px;font-weight:900;line-height:1;color:var(--lavender);}
+.funnel-slbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);margin-top:3px;}
+.funnel-srate{font-size:10px;color:var(--text-dim);margin-top:2px;}
+.funnel-branches{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+.branch-card{flex:1;min-width:120px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:background 0.15s;}
+.branch-card.review:hover,.branch-card.review.active{background:var(--review-dark);border-color:var(--review-border);}
+.branch-card.rejected:hover,.branch-card.rejected.active{background:var(--red-dark);border-color:var(--red-border);}
+.branch-card.review .branch-val,.branch-card.review.active .branch-val{color:var(--review);}
+.branch-card.rejected .branch-val,.branch-card.rejected.active .branch-val{color:var(--red);}
+.branch-val{font-size:22px;font-weight:900;line-height:1;color:var(--text-muted);}
+.branch-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.4px;color:var(--text-muted);margin-top:3px;}
+.stage-jobs-panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:20px;}
+.stage-jobs-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.stage-jobs-title{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);}
+.stage-job-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+.stage-job-row:last-child{border-bottom:none;}
+.stage-job-title{font-size:13px;font-weight:700;flex:1;min-width:0;}
+.stage-job-co{font-size:11px;color:var(--text-muted);}
+.stage-job-chip{flex-shrink:0;}
+/* ---- KPI extras ---- */
+.attack-exec-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:24px;}
+.attack-exec-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;}
+.attack-exec-val{font-size:26px;font-weight:900;line-height:1;}
+.attack-exec-lbl{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;}
+.attack-exec-card.pink .attack-exec-val{color:var(--pink);}
+.attack-exec-card.lav .attack-exec-val{color:var(--lavender);}
+.attack-exec-card.green .attack-exec-val{color:var(--green);}
+.attack-exec-card.dim .attack-exec-val{color:var(--text-muted);}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 </style>
 </head>
 <body>
@@ -1371,6 +1457,7 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
     <button class="p-pill p1" data-p="P1">P1 DEEP</button>
     <button class="p-pill p2" data-p="P2">P2 STANDARD</button>
     <button class="p-pill p3" data-p="P3">P3 LIGHT</button>
+    <button class="p-pill review" data-p="REVIEW">REVIEW</button>
   </div>
   <div class="agent-layout">
     <div class="agent-list-col" id="agent-list"><div class="loading">Loading opportunities…</div></div>
@@ -1415,6 +1502,8 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
       <button class="kpi-logout" onclick="kpiLock()">Lock</button>
       <div class="kpi-section-title" style="margin-bottom:12px;">Outreach</div>
       <div id="kpi-metrics" class="metrics-grid"></div>
+      <div class="kpi-section-title">Attack Execution</div>
+      <div id="kpi-attack-exec" class="attack-exec-grid"></div>
       <div class="kpi-section-title">Conversion Funnel</div>
       <div id="kpi-conv" class="conv-grid"></div>
       <div id="kpi-att"></div>
@@ -1433,7 +1522,7 @@ let selectedJobId = null;
 let agentFilter = 'ALL';
 let kpiPasskey = '';
 let kpiData = null;
-let actionsLoaded = false;
+let pipeStageOpen = null;
 
 // ---- Utilities ----
 function esc(s) {
@@ -1443,6 +1532,25 @@ function esc(s) {
 function fmtDate(iso) {
   if (!iso) return '';
   try { return new Date(iso).toLocaleDateString('en-IN',{day:'numeric',month:'short'}); } catch(e){return '';}
+}
+function freshness(iso) {
+  if (!iso) return '';
+  try {
+    const days = Math.floor((Date.now() - new Date(iso)) / 86400000);
+    if (days <= 0) return 'today';
+    if (days === 1) return '1 day ago';
+    if (days < 7) return days + ' days ago';
+    if (days < 14) return '1 week ago';
+    if (days < 30) return Math.floor(days/7) + ' weeks ago';
+    return Math.floor(days/30) + 'mo ago';
+  } catch(e) { return ''; }
+}
+function seqPreview(seq) {
+  if (!seq) return '';
+  let arr = seq;
+  if (typeof arr === 'string') { try { arr = JSON.parse(arr); } catch(e) { return ''; } }
+  if (!Array.isArray(arr) || !arr.length) return '';
+  return arr;
 }
 function getSavedPk() { try{return sessionStorage.getItem('rr_pk')||'';}catch(e){return '';} }
 function savePk(pk) { try{sessionStorage.setItem('rr_pk',pk);}catch(e){} }
@@ -1500,22 +1608,60 @@ async function loadAgent() {
 
 function renderAgentList() {
   if (!oppsData) return;
-  const filtered = agentFilter==='ALL' ? oppsData : oppsData.filter(j=>j.attack_priority===agentFilter);
+  let filtered;
+  if (agentFilter === 'ALL') {
+    filtered = oppsData.filter(j => j.eligibility_status === 'ELIGIBLE');
+  } else if (agentFilter === 'REVIEW') {
+    filtered = oppsData.filter(j => j.eligibility_status === 'REVIEW');
+  } else {
+    filtered = oppsData.filter(j => j.attack_priority === agentFilter);
+  }
   if (!filtered.length) {
     document.getElementById('agent-list').innerHTML='<div class="empty">No opportunities match this filter.</div>';
     return;
   }
   document.getElementById('agent-list').innerHTML = filtered.map(j => {
+    const isReview = j.eligibility_status === 'REVIEW';
     const p = (j.attack_priority||'').toLowerCase();
-    const fit = j.overall_fit != null ? `<span class="fit-num">${j.overall_fit}/10</span>` : '';
+    const fit = j.overall_fit != null ? j.overall_fit : null;
+    const fr = freshness(j.posted_at);
+    const loc = j.location && j.location !== 'Location not specified' ? j.location : '';
+    const why = j.attack_reason || j.eligibility_reason || '';
+    const seq = seqPreview(j.attack_action_sequence);
+    const access = j.attack_access_level || '';
+
+    if (isReview) {
+      return `<div class="opp-card${j.job_id===selectedJobId?' selected':''}" onclick="selectJob('${esc(j.job_id)}')">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+          <span class="review-chip-card">REVIEW</span>
+        </div>
+        <div class="opp-title">${esc(j.title)}</div>
+        <div class="opp-company">${esc(j.company)}</div>
+        <div class="opp-meta">
+          ${loc ? `<span class="opp-freshness">${esc(loc)}</span>` : ''}
+          ${loc && fr ? `<span class="opp-freshness">·</span>` : ''}
+          ${fr ? `<span class="opp-freshness">${esc(fr)}</span>` : ''}
+        </div>
+        ${why ? `<div class="opp-why">${esc(why)}</div>` : ''}
+      </div>`;
+    }
+
     return `<div class="opp-card${j.job_id===selectedJobId?' selected':''}" onclick="selectJob('${esc(j.job_id)}')">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+        ${j.attack_priority ? `<span class="p-chip ${p}">${esc(j.attack_priority)}</span>` : ''}
+        ${j.attack_intensity ? `<span style="font-size:10px;color:var(--text-dim);">${esc(j.attack_intensity)}</span>` : ''}
+      </div>
       <div class="opp-title">${esc(j.title)}</div>
       <div class="opp-company">${esc(j.company)}</div>
       <div class="opp-meta">
-        <span class="p-chip ${p}">${esc(j.attack_priority)}</span>
-        ${j.attack_intensity ? `<span style="font-size:10px;color:var(--text-dim);">${esc(j.attack_intensity)}</span>` : ''}
-        ${fit}
+        ${loc ? `<span class="opp-freshness">${esc(loc)}</span>` : ''}
+        ${loc && fr ? `<span class="opp-freshness">·</span>` : ''}
+        ${fr ? `<span class="opp-freshness">${esc(fr)}</span>` : ''}
+        ${fit != null ? `<span class="fit-num" style="margin-left:4px;">Fit ${fit}/10</span>` : ''}
+        ${access ? `<span class="access-badge access-${esc(access)}" style="margin-left:2px;">${esc(access)}</span>` : ''}
       </div>
+      ${why ? `<div class="opp-why">${esc(why)}</div>` : ''}
+      ${Array.isArray(seq) && seq.length ? `<div class="opp-seq">${seq.map((s,i)=>(i>0?'<span class="seq-arr">→</span>':'')+'<span class="seq-tag">'+esc(s)+'</span>').join('')}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -1529,72 +1675,190 @@ function selectJob(id) {
 }
 
 function renderJobDetail(j) {
+  const isReview = j.eligibility_status === 'REVIEW';
   const p = (j.attack_priority||'').toLowerCase();
-  let execHtml = '';
+  const fr = freshness(j.posted_at);
+  const loc = j.location && j.location !== 'Location not specified' ? j.location : '';
+
+  // REVIEW job: simplified detail
+  if (isReview) {
+    const jdText = j.description || j.text || '';
+    document.getElementById('agent-detail').innerHTML = `
+      <div style="margin-bottom:14px;"><span class="review-chip-card">REVIEW</span></div>
+      <div class="detail-title">${esc(j.title)}</div>
+      <div class="detail-company">${esc(j.company)}</div>
+      <div class="detail-meta-row">
+        ${loc ? `<span>${esc(loc)}</span><span class="detail-meta-dot">·</span>` : ''}
+        ${fr ? `<span>${esc(fr)}</span>` : ''}
+        ${j.url ? `<a href="${esc(j.url)}" target="_blank" class="btn-sm" style="margin-left:4px;">View Posting ↗</a>` : ''}
+      </div>
+      <div class="review-banner">
+        <div class="review-banner-title">Why it requires review</div>
+        <div class="review-banner-text">${esc(j.eligibility_reason || 'Manual review required')}</div>
+      </div>
+      ${jdText ? `<div class="detail-section">
+        <div class="detail-section-title detail-collapse-hdr" onclick="toggleCollapse('jd-${esc(j.job_id)}',this)">
+          Job Details <span class="detail-collapse-icon">▼</span>
+        </div>
+        <div class="detail-collapse-body" id="jd-${esc(j.job_id)}">${esc(jdText)}</div>
+      </div>` : ''}
+    `;
+    return;
+  }
+
+  // ELIGIBLE job: full detail A–I
   let execPkt = null;
   if (j.execution_packet) { try { execPkt = JSON.parse(j.execution_packet); } catch(e){} }
 
-  let seqHtml = '';
-  if (j.attack_action_sequence) {
-    let seq = j.attack_action_sequence;
-    if (typeof seq === 'string') { try { seq = JSON.parse(seq); } catch(e){ seq=[]; } }
-    if (Array.isArray(seq) && seq.length) {
-      seqHtml = seq.map((s,i) =>
-        `${i>0?'<span class="seq-arrow">→</span>':''}
-        <span class="seq-step"><span class="seq-num">${i+1}</span>${esc(s)}</span>`
-      ).join('');
-    }
-  }
-
-  let fitHtml = '';
+  // Section C: Fit breakdown
   const dims = [
     {key:'role_fit',label:'Role Fit'},{key:'experience_fit',label:'Exp Fit'},
     {key:'skill_fit',label:'Skill Fit'},{key:'portfolio_fit',label:'Portfolio'},
     {key:'domain_fit',label:'Domain Fit'},
   ];
   const hasFit = dims.some(d=>j[d.key]!=null);
-  if (hasFit) {
-    fitHtml = `<div class="detail-section">
-      <div class="detail-section-title">Fit Assessment</div>
-      ${dims.map(d=>j[d.key]!=null?`<div class="fit-row">
-        <span class="fit-label">${d.label}</span>
-        <div class="fit-track"><div class="fit-fill" style="width:${(j[d.key]/10)*100}%"></div></div>
-        <span class="fit-score">${j[d.key]}</span>
-      </div>`:'').join('')}
-    </div>`;
+  const fitHtml = hasFit ? `<div class="detail-section">
+    <div class="detail-section-title">C. Fit Breakdown</div>
+    ${dims.map(d=>j[d.key]!=null?`<div class="fit-row">
+      <span class="fit-label">${d.label}</span>
+      <div class="fit-track"><div class="fit-fill" style="width:${(j[d.key]/10)*100}%"></div></div>
+      <span class="fit-score">${j[d.key]}</span>
+    </div>`:'').join('')}
+    ${j.overall_fit!=null?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted);">Overall Fit: <span style="color:var(--lavender);font-weight:800;">${j.overall_fit}/10</span></div>`:''}
+  </div>` : '';
+
+  // Section D: Attack Plan
+  let seqHtml = '';
+  if (j.attack_action_sequence) {
+    let seq = j.attack_action_sequence;
+    if (typeof seq === 'string') { try { seq = JSON.parse(seq); } catch(e){ seq=[]; } }
+    if (Array.isArray(seq) && seq.length) {
+      seqHtml = seq.map((s,i)=>`${i>0?'<span class="seq-arrow">→</span>':''}<span class="seq-step"><span class="seq-num">${i+1}</span>${esc(s)}</span>`).join('');
+    }
+  }
+  const attackHtml = (j.attack_priority||j.attack_intensity||j.attack_access_level||seqHtml) ? `<div class="detail-section">
+    <div class="detail-section-title">D. Attack Plan</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center;">
+      ${j.attack_priority ? `<span class="p-chip ${p}">${esc(j.attack_priority)}</span>` : ''}
+      ${j.attack_intensity ? `<span style="font-size:11px;color:var(--text-muted);">${esc(j.attack_intensity)}</span>` : ''}
+      ${j.attack_access_level ? `<span class="access-badge access-${esc(j.attack_access_level)}">Access: ${esc(j.attack_access_level)}</span>` : ''}
+    </div>
+    ${seqHtml ? `<div class="action-seq">${seqHtml}</div>` : ''}
+  </div>` : '';
+
+  // Section E: Human Contact Data
+  let contacts = [];
+  // From execution packet
+  if (execPkt && execPkt.steps) {
+    for (const s of execPkt.steps) {
+      if (s.type === 'linkedin' && (s.person_name || s.linkedin_url)) {
+        contacts.push({name: s.person_name||'', role: s.person_role||'', linkedin_url: s.linkedin_url||''});
+      }
+    }
+  }
+  // From job fields (hiring manager)
+  const hmContact = { name: j.hm_name||'', email: j.hm_email||'', linkedin_url: '' };
+
+  let contactHtml = '';
+  if (contacts.length || hmContact.name || hmContact.email || j.company_linkedin) {
+    const blocks = [];
+    if (contacts.length) {
+      blocks.push(`<div style="font-size:11px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Product Person</div>`
+        + contacts.map(c=>`<div class="contact-block">
+          ${c.name ? `<div class="contact-name">${esc(c.name)}</div>` : ''}
+          ${c.role ? `<div class="contact-role">${esc(c.role)}</div>` : ''}
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+            ${c.linkedin_url ? `<a href="${esc(c.linkedin_url)}" target="_blank" class="btn-sm primary">Open LinkedIn ↗</a>` : ''}
+          </div>
+        </div>`).join(''));
+    }
+    if (hmContact.email) {
+      blocks.push(`<div class="contact-block">
+        ${hmContact.name ? `<div class="contact-name">${esc(hmContact.name)}</div>` : ''}
+        <div class="contact-email">${esc(hmContact.email)}</div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+          <button class="btn-sm" onclick="copyText('${esc(hmContact.email)}',this,'Copy Email')">Copy Email</button>
+          <a href="mailto:${esc(hmContact.email)}" class="btn-sm">Open Email ↗</a>
+        </div>
+      </div>`);
+    }
+    if (j.company_linkedin && !contacts.length) {
+      blocks.push(`<div class="contact-block">
+        <div class="contact-role">Company LinkedIn</div>
+        <div style="margin-top:4px;"><a href="${esc(j.company_linkedin)}" target="_blank" class="btn-sm primary">Open LinkedIn ↗</a></div>
+      </div>`);
+    }
+    if (blocks.length) {
+      contactHtml = `<div class="detail-section"><div class="detail-section-title">E. Human Contact</div>${blocks.join('')}</div>`;
+    }
   }
 
+  // Sections F/G/H: Execution steps
+  let execHtml = '';
   if (execPkt && execPkt.steps && execPkt.steps.length) {
     execHtml = `<div class="detail-section">
-      <div class="detail-section-title">Execution Plan${seqHtml?'<span style="float:right;display:flex;gap:4px;align-items:center;">'+seqHtml+'</span>':''}</div>
+      <div class="detail-section-title">F–H. Execute</div>
       ${execPkt.steps.map(s=>renderExecStep(j.job_id,s,j)).join('')}
-      <div style="margin-top:10px;display:flex;gap:8px;">
-        <button class="btn-sm primary" style="flex:1;" onclick="markSentFromAgent('${esc(j.job_id)}', this)">Mark as Sent</button>
+      <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+        ${execPkt.steps.some(s=>s.type==='linkedin') ? `<button class="btn-sm primary" onclick="logAttackEvent('${esc(j.job_id)}','linkedin_sent',this)">Mark LinkedIn Sent</button>` : ''}
+        ${execPkt.steps.some(s=>s.type==='email'||s.type==='email_unattributed') ? `<button class="btn-sm primary" onclick="logAttackEvent('${esc(j.job_id)}','email_sent',this)">Mark Email Sent</button>` : ''}
+        ${execPkt.steps.some(s=>s.type==='apply') ? `<button class="btn-sm primary" onclick="logAttackEvent('${esc(j.job_id)}','applied',this)">Mark Applied</button>` : ''}
       </div>
     </div>`;
   } else {
     execHtml = `<div class="detail-section">
       <div class="detail-section-title">Execution Plan</div>
-      <div class="empty" style="padding:16px 0;">No execution packet built yet — run the pipeline to generate it.</div>
+      <div class="empty" style="padding:12px 0;">No execution packet built yet.</div>
     </div>`;
   }
 
-  document.getElementById('agent-detail').innerHTML = `
-    <div class="detail-priority"><span class="p-chip ${p}">${esc(j.attack_priority)}</span>${j.attack_intensity?` <span style="font-size:11px;color:var(--text-dim);margin-left:6px;">${esc(j.attack_intensity)}</span>`:''}</div>
-    <div class="detail-title">${esc(j.title)}</div>
-    <div class="detail-company">${esc(j.company)}${j.location?' · '+esc(j.location):''}</div>
-    <div style="margin-bottom:16px;">
-      ${j.url?`<a href="${esc(j.url)}" target="_blank" class="btn-sm">View Posting ↗</a> `:''}
-      ${j.company_linkedin?`<a href="${esc(j.company_linkedin)}" target="_blank" class="btn-sm">LinkedIn ↗</a>`:''}
-      ${j.hm_email?`<a href="mailto:${esc(j.hm_email)}" class="btn-sm">${esc(j.hm_email)}</a>`:''}
+  // Section I: Job Details (collapsible)
+  const jdText = j.description || j.text || '';
+  const jdHtml = jdText ? `<div class="detail-section">
+    <div class="detail-section-title">
+      <span class="detail-collapse-hdr" onclick="toggleCollapse('jd-${esc(j.job_id)}',this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;width:100%;">
+        I. Job Details <span class="detail-collapse-icon">▼</span>
+      </span>
     </div>
-    ${j.attack_reason||j.eligibility_reason?`<div class="detail-section">
-      <div class="detail-section-title">Why This Job</div>
+    <div class="detail-collapse-body" id="jd-${esc(j.job_id)}">${esc(jdText)}</div>
+  </div>` : '';
+
+  document.getElementById('agent-detail').innerHTML = `
+    <div class="detail-priority">
+      <span class="p-chip ${p}">${esc(j.attack_priority||'')}</span>
+      ${j.attack_intensity ? `<span style="font-size:11px;color:var(--text-dim);margin-left:6px;">${esc(j.attack_intensity)}</span>` : ''}
+    </div>
+    <div class="detail-title">${esc(j.title)}</div>
+    <div class="detail-company">${esc(j.company)}</div>
+    <div class="detail-meta-row">
+      ${loc ? `<span>${esc(loc)}</span><span class="detail-meta-dot">·</span>` : ''}
+      ${fr ? `<span>${esc(fr)}</span><span class="detail-meta-dot">·</span>` : ''}
+      ${j.overall_fit != null ? `<span style="color:var(--lavender);font-weight:700;">Fit ${j.overall_fit}/10</span>` : ''}
+      ${j.attack_access_level ? `<span class="access-badge access-${esc(j.attack_access_level)}">${esc(j.attack_access_level)}</span>` : ''}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">
+      ${j.url ? `<a href="${esc(j.url)}" target="_blank" class="btn-sm">View Posting ↗</a>` : ''}
+      ${j.company_linkedin ? `<a href="${esc(j.company_linkedin)}" target="_blank" class="btn-sm">Company LinkedIn ↗</a>` : ''}
+      ${j.hm_email ? `<a href="mailto:${esc(j.hm_email)}" class="btn-sm">${esc(j.hm_email)}</a>` : ''}
+    </div>
+    ${j.attack_reason||j.eligibility_reason ? `<div class="detail-section">
+      <div class="detail-section-title">B. Why This Job</div>
       <div class="why-text">${esc(j.attack_reason||j.eligibility_reason)}</div>
-    </div>`:''}
+    </div>` : ''}
     ${fitHtml}
+    ${attackHtml}
+    ${contactHtml}
     ${execHtml}
+    ${jdHtml}
   `;
+}
+
+function toggleCollapse(id, hdr) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('open');
+  const icon = hdr.querySelector('.detail-collapse-icon');
+  if (icon) icon.style.transform = el.classList.contains('open') ? 'rotate(180deg)' : '';
 }
 
 // ---- Agent filter pills ----
@@ -1605,31 +1869,33 @@ document.querySelectorAll('.p-pill').forEach(btn => {
     btn.classList.add('active');
     selectedJobId = null;
     renderAgentList();
-    document.getElementById('agent-detail').innerHTML='<div class="detail-empty">Select a job to see the full attack plan.</div>';
+    const hint = agentFilter === 'REVIEW'
+      ? 'Select a job to see why it requires review.'
+      : 'Select a job to see the full attack plan.';
+    document.getElementById('agent-detail').innerHTML=`<div class="detail-empty">${hint}</div>`;
   });
 });
 
-async function markSentFromAgent(jobId, btn) {
-  const pk = kpiPasskey || getSavedPk();
+async function logAttackEvent(jobId, eventType, btn) {
+  let pk = kpiPasskey || getSavedPk();
   if (!pk) {
-    const entered = prompt('Enter passkey to log this event:');
-    if (!entered) return;
-    kpiPasskey = entered;
-    savePk(entered);
+    pk = prompt('Enter passkey to log this action:');
+    if (!pk) return;
+    kpiPasskey = pk; savePk(pk);
   }
-  btn.disabled = true;
-  btn.textContent = 'Logging…';
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Logging…';
   try {
     const res = await fetch('/api/pipeline/log', {
       method:'POST',
-      headers:{'Authorization':'Bearer '+(kpiPasskey||getSavedPk()),'Content-Type':'application/json'},
-      body: JSON.stringify({job_id:jobId,event_type:'email_sent',action:'set',noted_at:new Date().toISOString()}),
+      headers:{'Authorization':'Bearer '+pk,'Content-Type':'application/json'},
+      body: JSON.stringify({job_id:jobId,event_type:eventType,action:'set',noted_at:new Date().toISOString()}),
     });
-    if (res.status===401) { btn.textContent='Wrong passkey'; btn.disabled=false; kpiPasskey=''; return; }
-    if (res.ok) { btn.textContent='Logged!'; btn.style.color='var(--green)'; }
-    else { const e=await res.json().catch(()=>({})); btn.textContent='Error: '+(e.error||res.status); }
-  } catch(e) { btn.textContent='Network error'; }
-  setTimeout(()=>{btn.disabled=false;btn.textContent='Mark as Sent';btn.style.color='';},2500);
+    if (res.status===401){btn.textContent='Wrong passkey';kpiPasskey='';btn.disabled=false;return;}
+    if (res.ok){btn.textContent='Logged ✓';btn.style.color='var(--green)';kpiData=null;}
+    else{const e=await res.json().catch(()=>({}));btn.textContent='Error: '+(e.error||res.status);}
+  } catch(e){btn.textContent='Network error';}
+  setTimeout(()=>{btn.disabled=false;btn.textContent=origText;btn.style.color='';},2500);
 }
 
 // ---- EXECUTION STEP RENDERER (shared) ----
@@ -1688,23 +1954,37 @@ async function loadActions() {
 
 function renderActions(pipeState) {
   const wrap = document.getElementById('actions-container');
-  const opps = oppsData || [];
+  const opps = (oppsData || []).filter(j => j.eligibility_status === 'ELIGIBLE');
 
-  // Build pipeline state lookup
   const stateMap = {};
   const followupDue = [];
   const inprogress = [];
   const responses = [];
+  const recentlyCompleted = [];
+  const sevenDaysAgo = Date.now() - 7 * 86400000;
+
   if (pipeState) {
     for (const j of pipeState.jobs) {
       stateMap[j.job_id] = j;
-      if (j.followup_due) followupDue.push(j);
-      else if (['RESPONDED','CONVERSATION','INTERVIEW','OFFER'].includes(j.state)) responses.push(j);
-      else if (['WAITING','FOLLOW-UP DUE','NO RESPONSE'].includes(j.state)) inprogress.push(j);
+      if (j.followup_due) {
+        followupDue.push(j);
+      } else if (['RESPONDED','CONVERSATION','INTERVIEW','OFFER'].includes(j.state)) {
+        responses.push(j);
+      } else if (['WAITING','FOLLOW-UP DUE','APPLICATION SENT','NO RESPONSE'].includes(j.state)) {
+        inprogress.push(j);
+      }
+      // Recently completed: any event in last 7 days
+      if (j.events_at) {
+        const recent = Object.values(j.events_at).some(ts => {
+          try { return new Date(ts).getTime() >= sevenDaysAgo; } catch(e){ return false; }
+        });
+        if (recent && !['OFFER','INTERVIEW','CONVERSATION','RESPONDED'].includes(j.state)) {
+          recentlyCompleted.push(j);
+        }
+      }
     }
   }
 
-  // NEW ACTIONS: opps with execution packet not yet in pipeline
   const newActions = opps.filter(j => {
     if (!j.execution_packet) return false;
     if (!pipeState) return true;
@@ -1716,7 +1996,7 @@ function renderActions(pipeState) {
 
   if (!pipeState) {
     html += `<div style="background:var(--lavender-dark);border:1px solid var(--lavender-border);border-radius:10px;padding:14px;margin-bottom:24px;font-size:13px;color:var(--lavender);">
-      Unlock KPIs to see your pipeline groups (responses, follow-ups, in progress). New actions are shown below.
+      Unlock KPIs to see responses, follow-ups, and attacks in progress.
     </div>`;
   }
 
@@ -1736,7 +2016,14 @@ function renderActions(pipeState) {
     html += `<div class="group-block"><div class="group-title newactions">New Actions <span class="group-count newactions">${newActions.length}</span></div>
       ${newActions.map(j=>actionCardHtml(null,j,'newactions')).join('')}</div>`;
   }
-  if (!html) html = '<div class="empty">No actions to show. Run the pipeline to generate execution packets.</div>';
+  if (recentlyCompleted.length) {
+    html += `<div class="group-block"><div class="group-title completed">Recently Completed <span class="group-count completed">${recentlyCompleted.length}</span></div>
+      ${recentlyCompleted.map(j=>actionCardHtml(j,null,'completed')).join('')}</div>`;
+  }
+
+  if (!html) {
+    html = `<div class="catchup"><div class="catchup-icon">✓</div>You're all caught up.</div>`;
+  }
 
   wrap.innerHTML = html;
   wrap.querySelectorAll('.action-card-hdr').forEach(hdr => {
@@ -1747,31 +2034,42 @@ function renderActions(pipeState) {
 function actionCardHtml(pipeJob, oppJob, cls) {
   const j = oppJob || (oppsData && oppsData.find(o=>o.job_id===(pipeJob&&pipeJob.job_id))) || pipeJob;
   if (!j) return '';
-  const title = j.title||pipeJob&&pipeJob.title||'';
-  const company = j.company||pipeJob&&pipeJob.company||'';
+  const title = j.title || (pipeJob&&pipeJob.title) || '';
+  const company = j.company || (pipeJob&&pipeJob.company) || '';
   const jid = j.job_id;
   let bodyHtml = '';
   let execPkt = null;
   if (j.execution_packet) { try{execPkt=JSON.parse(j.execution_packet);}catch(e){} }
+
   if (execPkt && execPkt.steps) {
     bodyHtml = execPkt.steps.map(s=>renderExecStep(jid,s,j)).join('');
-    bodyHtml += `<div style="display:flex;gap:8px;margin-top:10px;">
-      <button class="btn-sm primary" style="flex:1;" onclick="logActionEvent('${esc(jid)}','email_sent',this)">Mark Email Sent</button>
-      <button class="btn-sm" style="flex:1;" onclick="logActionEvent('${esc(jid)}','linkedin_sent',this)">Mark LinkedIn Sent</button>
+    // Per-type action buttons
+    const hasLi = execPkt.steps.some(s=>s.type==='linkedin');
+    const hasEm = execPkt.steps.some(s=>s.type==='email'||s.type==='email_unattributed');
+    const hasAp = execPkt.steps.some(s=>s.type==='apply');
+    bodyHtml += `<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+      ${hasLi ? `<button class="btn-sm primary" onclick="logActionEvent('${esc(jid)}','linkedin_sent',this)">Mark LinkedIn Sent</button>` : ''}
+      ${hasEm ? `<button class="btn-sm primary" onclick="logActionEvent('${esc(jid)}','email_sent',this)">Mark Email Sent</button>` : ''}
+      ${hasAp ? `<button class="btn-sm primary" onclick="logActionEvent('${esc(jid)}','applied',this)">Mark Applied</button>` : ''}
     </div>`;
   } else if (pipeJob) {
-    const stateClass = 's-'+((pipeJob.state||'NOT STARTED').replace(/\s/g,'\\ '));
-    bodyHtml = `<span class="state-badge ${stateClass}">${esc(pipeJob.state)}</span>`;
+    const sClass = STATE_CSS[pipeJob.state] || 's-not-started';
+    bodyHtml = `<span class="state-badge ${sClass}">${esc(pipeJob.state)}</span>`;
   } else {
     bodyHtml = '<div class="empty" style="padding:10px 0;">No execution packet — run pipeline.</div>';
   }
+
+  const stateLabel = pipeJob ? (pipeJob.state||'NOT STARTED') : '';
+  const sClass = stateLabel ? (STATE_CSS[stateLabel]||'s-not-started') : '';
+
   return `<div class="action-card" id="ac-${jid}">
     <div class="action-card-hdr">
       <div class="action-title-wrap">
         <div class="action-title">${esc(title)}</div>
         <div class="action-company">${esc(company)}</div>
       </div>
-      ${j.attack_priority?`<span class="p-chip ${(j.attack_priority||'').toLowerCase()}">${esc(j.attack_priority)}</span>`:''}
+      ${j.attack_priority ? `<span class="p-chip ${(j.attack_priority||'').toLowerCase()}">${esc(j.attack_priority)}</span>` : ''}
+      ${stateLabel && stateLabel !== 'NOT STARTED' ? `<span class="state-badge ${sClass}" style="margin-left:4px;">${esc(stateLabel)}</span>` : ''}
       <span class="action-toggle">▼</span>
     </div>
     <div class="action-card-body">${bodyHtml}</div>
@@ -1800,25 +2098,86 @@ async function logActionEvent(jobId, eventType, btn) {
 }
 
 // ---- PIPELINE ----
+const STATE_CSS = {
+  'OFFER':'s-offer','INTERVIEW':'s-interview','CONVERSATION':'s-conversation',
+  'RESPONDED':'s-responded','FOLLOW-UP DUE':'s-followup-due','WAITING':'s-waiting',
+  'APPLICATION SENT':'s-app-sent','REJECTED':'s-rejected','NO RESPONSE':'s-no-response',
+  'NOT STARTED':'s-not-started',
+};
+
 async function loadPipeline() {
   if (!summaryData) {
     try{const r=await fetch('/api/summary');summaryData=await r.json();}catch(e){document.getElementById('pipeline-funnel').innerHTML='<div class="empty">Could not load.</div>';return;}
   }
   const d = summaryData;
-  const stages = [
-    {v:d.discovered,l:'Discovered',r:''},
-    {v:d.eligible,l:'Eligible',r:d.discovered?Math.round(d.eligible/d.discovered*100)+'%':'—'},
-    {v:d.prioritized,l:'Prioritized',r:d.eligible?Math.round(d.prioritized/d.eligible*100)+'%':'—'},
-    {v:d.attacks_ready,l:'Attacks Ready',r:d.prioritized?Math.round(d.attacks_ready/d.prioritized*100)+'%':'—'},
+
+  // Stage counts from summary
+  const rejected = (d.discovered||0) - (d.eligible||0) - (d.review||0);
+
+  // Later stages from kpiData if available
+  const pk = kpiPasskey || getSavedPk();
+  if (pk && !kpiData) {
+    try {
+      const r = await fetch('/api/pipeline/state',{headers:{'Authorization':'Bearer '+pk}});
+      if (r.ok) { kpiData = await r.json(); kpiPasskey = pk; }
+    } catch(e){}
+  }
+
+  let attacked=0,waiting=0,responded=0,conversation=0,interview=0,offer=0;
+  if (kpiData) {
+    for (const j of kpiData.jobs) {
+      if (j.applied||j.linkedin_sent||j.email_sent) attacked++;
+      if (j.state==='WAITING'||j.state==='APPLICATION SENT') waiting++;
+      if (j.state==='RESPONDED') responded++;
+      if (j.state==='CONVERSATION') conversation++;
+      if (j.state==='INTERVIEW') interview++;
+      if (j.state==='OFFER') offer++;
+    }
+  }
+
+  const mainStages = [
+    {key:'discovered',v:d.discovered,l:'Discovered',prev:null},
+    {key:'eligible',v:d.eligible,l:'Eligible',prev:d.discovered},
+    {key:'prioritized',v:d.prioritized,l:'Prioritized',prev:d.eligible},
+    {key:'attacked',v:kpiData?attacked:null,l:'Attacked',prev:d.prioritized},
+    {key:'waiting',v:kpiData?waiting:null,l:'Waiting',prev:kpiData?attacked:null},
+    {key:'responded',v:kpiData?responded:null,l:'Responded',prev:kpiData?waiting:null},
+    {key:'conversation',v:kpiData?conversation:null,l:'Conversation',prev:kpiData?responded:null},
+    {key:'interview',v:kpiData?interview:null,l:'Interview',prev:kpiData?conversation:null},
+    {key:'offer',v:kpiData?offer:null,l:'Offer',prev:kpiData?interview:null},
   ];
-  document.getElementById('pipeline-funnel').innerHTML = stages.map((s,i) =>
-    `${i>0?'<div class="funnel-arrow">→</div>':''}
-    <div class="funnel-card">
-      <div class="funnel-val mono">${s.v??'–'}</div>
-      <div class="funnel-label">${s.l}</div>
-      ${s.r?`<div class="funnel-rate">${s.r} of previous</div>`:''}
-    </div>`
-  ).join('');
+
+  const funnelHtml = mainStages.map((s,i) => {
+    const rate = (s.v!=null && s.prev) ? Math.round((s.v/s.prev)*100)+'%' : '';
+    const locked = s.v === null;
+    return `<div class="funnel-stage${pipeStageOpen===s.key?' active':''}" onclick="openPipeStage('${s.key}')">
+      <div class="funnel-sval">${locked?'<span style="font-size:14px;color:var(--text-dim);">🔒</span>':((s.v??'–'))}</div>
+      <div class="funnel-slbl">${s.l}</div>
+      ${rate?`<div class="funnel-srate">${rate}</div>`:''}
+    </div>`;
+  }).join('');
+
+  const branchHtml = `
+    <div class="branch-card review${pipeStageOpen==='review'?' active':''}" onclick="openPipeStage('review')">
+      <div class="branch-val">${d.review??'–'}</div>
+      <div class="branch-lbl">Review</div>
+    </div>
+    <div class="branch-card rejected${pipeStageOpen==='rejected'?' active':''}" onclick="openPipeStage('rejected')">
+      <div class="branch-val">${rejected>=0?rejected:'–'}</div>
+      <div class="branch-lbl">Rejected</div>
+    </div>`;
+
+  document.getElementById('pipeline-funnel').innerHTML = `
+    <div class="funnel-full">
+      <div style="font-size:11px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Main Funnel — click a stage to see jobs</div>
+      <div class="funnel-row">${funnelHtml}</div>
+      <div style="font-size:11px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 8px;">Branches</div>
+      <div class="funnel-branches">${branchHtml}</div>
+      ${!kpiData?`<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">🔒 Attacked → Offer stages require passkey — unlock KPIs first.</div>`:''}
+      <div id="pipe-stage-detail"></div>
+    </div>`;
+
+  if (pipeStageOpen) renderPipeStageDetail(pipeStageOpen);
 
   const srcs = d.sources||{};
   const srcLabels = {hackernews:'Hacker News',cutshort:'Cutshort',iimjobs:'iimjobs',google_jobs:'Google Jobs',internshala:'Internshala',jsearch:'JSearch',yc:'YC Jobs',careers:'Direct Careers'};
@@ -1827,6 +2186,72 @@ async function loadPipeline() {
     ? srcEntries.map(([src,cnt])=>`<tr><td class="name">${esc(srcLabels[src]||src)}</td><td class="num">${cnt}</td></tr>`).join('')
     : '<tr><td colspan="2" class="empty" style="text-align:center;">No eligible jobs yet.</td></tr>';
 }
+
+function openPipeStage(key) {
+  pipeStageOpen = pipeStageOpen === key ? null : key;
+  loadPipeline();
+}
+
+function renderPipeStageDetail(key) {
+  const el = document.getElementById('pipe-stage-detail');
+  if (!el) return;
+
+  let jobs = [];
+  let title = key.toUpperCase();
+
+  if (key === 'discovered') {
+    el.innerHTML = `<div class="stage-jobs-panel"><div class="stage-jobs-hdr"><span class="stage-jobs-title">All Discovered (${summaryData.discovered})</span></div><div class="empty" style="padding:8px 0;font-size:12px;">All scraped jobs — ${summaryData.eligible} eligible · ${summaryData.review} review · ${((summaryData.discovered||0)-(summaryData.eligible||0)-(summaryData.review||0))} rejected</div></div>`;
+    return;
+  }
+  if (key === 'rejected') {
+    el.innerHTML = `<div class="stage-jobs-panel"><div class="stage-jobs-hdr"><span class="stage-jobs-title" style="color:var(--red);">Rejected (${Math.max(0,(summaryData.discovered||0)-(summaryData.eligible||0)-(summaryData.review||0))})</span></div><div class="empty" style="padding:8px 0;font-size:12px;">Rejected jobs are not available for display.</div></div>`;
+    return;
+  }
+  if ((key==='attacked'||key==='waiting'||key==='responded'||key==='conversation'||key==='interview'||key==='offer') && !kpiData) {
+    el.innerHTML = `<div class="stage-jobs-panel"><div class="empty" style="padding:8px 0;font-size:12px;">🔒 Unlock KPIs to see jobs at this stage.</div></div>`;
+    return;
+  }
+
+  const opp = oppsData || [];
+  if (key === 'eligible') {
+    jobs = opp.filter(j=>j.eligibility_status==='ELIGIBLE');
+  } else if (key === 'review') {
+    jobs = opp.filter(j=>j.eligibility_status==='REVIEW');
+  } else if (key === 'prioritized') {
+    jobs = opp.filter(j=>j.attack_priority&&j.eligibility_status==='ELIGIBLE');
+  } else if (kpiData) {
+    const stateFilter = {
+      attacked: j => j.applied||j.linkedin_sent||j.email_sent,
+      waiting: j => j.state==='WAITING'||j.state==='APPLICATION SENT',
+      responded: j => j.state==='RESPONDED',
+      conversation: j => j.state==='CONVERSATION',
+      interview: j => j.state==='INTERVIEW',
+      offer: j => j.state==='OFFER',
+    }[key];
+    const kpiJobs = stateFilter ? kpiData.jobs.filter(stateFilter) : [];
+    jobs = kpiJobs.map(kj => {
+      const oJob = opp.find(o=>o.job_id===kj.job_id);
+      return oJob ? {...oJob, ...kj} : kj;
+    });
+  }
+
+  if (!jobs.length) {
+    el.innerHTML = `<div class="stage-jobs-panel"><div class="empty" style="padding:8px 0;font-size:12px;">No jobs at this stage yet.</div></div>`;
+    return;
+  }
+
+  el.innerHTML = `<div class="stage-jobs-panel">
+    <div class="stage-jobs-hdr"><span class="stage-jobs-title">${esc(title)} (${jobs.length})</span></div>
+    ${jobs.slice(0,30).map(j=>`<div class="stage-job-row">
+      <div style="flex:1;min-width:0;">
+        <div class="stage-job-title">${esc(j.title||'')}</div>
+        <div class="stage-job-co">${esc(j.company||j.author||'')}</div>
+      </div>
+      ${j.attack_priority?`<span class="p-chip ${j.attack_priority.toLowerCase()} stage-job-chip">${esc(j.attack_priority)}</span>`:''}
+      ${j.state&&j.state!=='NOT STARTED'?`<span class="state-badge ${STATE_CSS[j.state]||'s-not-started'}">${esc(j.state)}</span>`:''}
+    </div>`).join('')}
+    ${jobs.length>30?`<div style="font-size:12px;color:var(--text-dim);padding:8px 0;">+ ${jobs.length-30} more</div>`:''}
+  </div>`;
 
 // ---- KPI ----
 function initKpi() {
@@ -1858,6 +2283,7 @@ async function loadKpiData(fromUnlock=false) {
     document.getElementById('kpi-gate-wrap').style.display='none';
     document.getElementById('kpi-content').style.display='block';
     renderKpiMetrics(kpiData.metrics);
+    renderKpiAttackExec(kpiData.jobs);
     renderKpiConv(kpiData.metrics);
     renderKpiAtt(kpiData.jobs);
     renderKpiList();
@@ -1880,6 +2306,36 @@ function renderKpiMetrics(m) {
     {v:m.interviews,l:'Interviews',cls:'yellow'},{v:m.offers,l:'Offers',cls:'yellow'},
   ];
   document.getElementById('kpi-metrics').innerHTML=cards.map(c=>`<div class="metric-card ${c.cls}"><div class="metric-val">${c.v}</div><div class="metric-lbl">${c.l}</div></div>`).join('');
+}
+
+function renderKpiAttackExec(jobs) {
+  const opps = oppsData || [];
+  const eligible = opps.filter(j=>j.eligibility_status==='ELIGIBLE');
+  const withPacket = eligible.filter(j=>j.execution_packet).length;
+  const acted = jobs.filter(j=>j.applied||j.linkedin_sent||j.email_sent).length;
+  const pct = withPacket > 0 ? Math.round((acted/withPacket)*100) : 0;
+
+  const byP = {P1:{total:0,acted:0},P2:{total:0,acted:0},P3:{total:0,acted:0}};
+  for (const opp of eligible) {
+    const p = opp.attack_priority;
+    if (!p || !byP[p]) continue;
+    byP[p].total++;
+    const kj = jobs.find(j=>j.job_id===opp.job_id);
+    if (kj && (kj.applied||kj.linkedin_sent||kj.email_sent)) byP[p].acted++;
+  }
+  const p1pct = byP.P1.total ? Math.round(byP.P1.acted/byP.P1.total*100) : 0;
+  const p2pct = byP.P2.total ? Math.round(byP.P2.acted/byP.P2.total*100) : 0;
+  const p3pct = byP.P3.total ? Math.round(byP.P3.acted/byP.P3.total*100) : 0;
+
+  const cards = [
+    {v:withPacket,l:'Actions Ready',cls:'lav'},
+    {v:acted,l:'Completed',cls:'green'},
+    {v:pct+'%',l:'Completion',cls:'pink'},
+    {v:p1pct+'%',l:'P1 Execution',cls:'pink'},
+    {v:p2pct+'%',l:'P2 Execution',cls:'lav'},
+    {v:p3pct+'%',l:'P3 Execution',cls:'dim'},
+  ];
+  document.getElementById('kpi-attack-exec').innerHTML=cards.map(c=>`<div class="attack-exec-card ${c.cls}"><div class="attack-exec-val">${c.v}</div><div class="attack-exec-lbl">${c.l}</div></div>`).join('');
 }
 
 function renderKpiConv(m) {
