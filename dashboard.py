@@ -2252,6 +2252,7 @@ function renderPipeStageDetail(key) {
     </div>`).join('')}
     ${jobs.length>30?`<div style="font-size:12px;color:var(--text-dim);padding:8px 0;">+ ${jobs.length-30} more</div>`:''}
   </div>`;
+}
 
 // ---- KPI ----
 function initKpi() {
