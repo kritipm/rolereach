@@ -1411,7 +1411,7 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
 .attack-exec-card.green .attack-exec-val{color:var(--green);}
 .attack-exec-card.dim .attack-exec-val{color:var(--text-muted);}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
-.tab-footer-note{margin:32px 16px 12px;padding:10px 14px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-dim);text-align:center;}
+.tab-footer-note{position:fixed;bottom:0;left:0;right:0;padding:6px 16px;background:var(--bg);border-top:1px solid var(--border);font-size:11px;color:var(--text-dim);text-align:center;z-index:50;pointer-events:none;}
 </style>
 </head>
 <body>
@@ -1449,7 +1449,6 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
       <div id="home-today" class="today-bar"><div class="today-dot"></div><span id="home-today-text" style="font-size:13px;color:var(--text-secondary);">Loading today's update…</span></div>
     </div>
   </div>
-  <div class="tab-footer-note">✦ New version coming — designs in iteration, launching this week</div>
 </section>
 
 <!-- AGENT -->
@@ -1465,13 +1464,11 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
     <div class="agent-list-col" id="agent-list"><div class="loading">Loading opportunities…</div></div>
     <div class="agent-detail-col" id="agent-detail"><div class="detail-empty">Select a job to see the full attack plan.</div></div>
   </div>
-  <div class="tab-footer-note">✦ New version coming — designs in iteration, launching this week</div>
 </section>
 
 <!-- ACTIONS -->
 <section id="tab-actions" class="tab-content">
   <div class="actions-wrap" id="actions-container"><div class="loading">Loading…</div></div>
-  <div class="tab-footer-note">✦ New version coming — designs in iteration, launching this week</div>
 </section>
 
 <!-- PIPELINE -->
@@ -1487,7 +1484,6 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
       </table>
     </div>
   </div>
-  <div class="tab-footer-note">✦ New version coming — designs in iteration, launching this week</div>
 </section>
 
 <!-- KPIs -->
@@ -1517,7 +1513,6 @@ body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,Bl
       <div id="kpi-list"></div>
     </div>
   </div>
-  <div class="tab-footer-note">✦ New version coming — designs in iteration, launching this week</div>
 </section>
 
 <script>
@@ -2420,6 +2415,7 @@ async function kpiLogEvent(jobId, eventType, btn) {
 // ---- Boot ----
 loadHome();
 </script>
+<div class="tab-footer-note">✦ New version coming — designs in iteration, launching this week</div>
 </body>
 </html>
 
